@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useNavigationStore } from '../../stores/navigationStore'
+import { usePlayerStore } from '../../stores/playerStore'
 import { AddMusicButton } from '../library/AddMusicButton'
 import type { NavigationTab } from '../../types/navigation'
 
@@ -24,7 +25,6 @@ const navigationItems: NavigationItem[] = [
   { label: 'Home', icon: Home },
   { label: 'Search', icon: Search },
   { label: 'Library', icon: Library },
-  { label: 'Playlists', icon: ListMusic },
   { label: 'Liked Songs', icon: Heart },
   { label: 'Artists', icon: UserRound },
   { label: 'Albums', icon: Album },
@@ -37,6 +37,8 @@ type SidebarProps = {
 export function Sidebar({ onCollapse }: SidebarProps) {
   const activeTab = useNavigationStore((state) => state.activeTab)
   const setActiveTab = useNavigationStore((state) => state.setActiveTab)
+  const queue = usePlayerStore((state) => state.queue)
+  const toggleQueue = usePlayerStore((state) => state.toggleQueue)
 
   return (
     <motion.aside
@@ -94,6 +96,23 @@ export function Sidebar({ onCollapse }: SidebarProps) {
       {/* Quick Add Music Action in Sidebar */}
       <div className="mt-6 px-1">
         <AddMusicButton className="w-full" size="sm" />
+      </div>
+
+      {/* Queue Quick Access Button */}
+      <div className="mt-4 px-1">
+        <button
+          type="button"
+          onClick={toggleQueue}
+          className="group flex h-10 w-full items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 text-xs font-medium text-white/70 hover:border-violet-400/30 hover:bg-violet-400/10 hover:text-white transition-all"
+        >
+          <div className="flex items-center gap-2.5">
+            <ListMusic className="size-4 text-violet-300" strokeWidth={1.8} />
+            <span>Play Queue</span>
+          </div>
+          <span className="rounded-full bg-white/[0.08] px-1.5 py-0.5 text-[10px] font-mono text-white/50 group-hover:text-violet-200">
+            {queue.length}
+          </span>
+        </button>
       </div>
 
       <div className="mt-auto border-t border-white/[0.06] pt-3">

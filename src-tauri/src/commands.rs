@@ -195,6 +195,13 @@ pub fn check_file_exists(path: String) -> Result<bool, String> {
     Ok(Path::new(&path).exists())
 }
 
+#[tauri::command]
+pub fn delete_track(app: AppHandle, id: String) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.delete_track(&id)
+}
+
 fn simple_base64_encode(data: &[u8]) -> String {
     const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::with_capacity((data.len() + 2) / 3 * 4);

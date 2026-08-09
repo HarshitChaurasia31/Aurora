@@ -16,7 +16,8 @@ pub fn run() {
             check_file_exists,
             pick_audio_file,
             pick_audio_folder,
-            read_file_bytes
+            read_file_bytes,
+            delete_track
         ])
         .run(tauri::generate_context!())
         .expect("error while running Aurora");

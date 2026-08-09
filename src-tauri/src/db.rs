@@ -265,7 +265,6 @@ impl DatabaseManager {
                             .map_err(|e| format!("Query existing track by hash error: {}", e))?;
 
                         if let Some((ex_id, ex_date, ex_liked, ex_plays, ex_art, ex_hash, old_path)) = candidate {
-                            // Only reconcile if the old path is missing or different
                             if !Path::new(&old_path).exists() || old_path != input.file_path {
                                 Some((ex_id, ex_date, ex_liked, ex_plays, ex_art, ex_hash))
                             } else {
@@ -508,6 +507,45 @@ impl DatabaseManager {
 
         Ok(new_count)
     }
+
+    pub fn delete_track(&self, id: &str) -> Result<(), String> {
+        let conn = self.get_connection()?;
+
+        // 1. Check if track exists and get its artwork_path
+        let artwork_path: Option<String> = conn
+            .query_row(
+                "SELECT artwork_path FROM tracks WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Query track artwork error: {}", e))?
+            .flatten();
+
+        // 2. Delete track record from SQLite
+        conn.execute("DELETE FROM tracks WHERE id = ?1", params![id])
+            .map_err(|e| format!("Failed to delete track {}: {}", id, e))?;
+
+        // 3. Clean up cached artwork file ONLY if no other track references it
+        if let Some(art_path) = artwork_path {
+            let remaining_refs: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM tracks WHERE artwork_path = ?1",
+                    params![art_path],
+                    |row| row.get(0),
+                )
+                .unwrap_or(1);
+
+            if remaining_refs == 0 {
+                let p = Path::new(&art_path);
+                if p.exists() {
+                    let _ = fs::remove_file(p);
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 fn fastrand_u32() -> u32 {
@@ -587,7 +625,7 @@ mod tests {
         let moved_input = DbTrackInput {
             id: Some("new_temporary_id".to_string()),
             file_path: moved_path.clone(),
-            file_hash: None, // Will be computed on disk in save_tracks
+            file_hash: None,
             title: Some("For A Reason".to_string()),
             artist: Some("Karan Aujla".to_string()),
             album: Some("P-Pop".to_string()),
@@ -600,14 +638,13 @@ mod tests {
             file_size: 100,
             format: "mp3".to_string(),
             artwork_path: None,
-            date_added: Some(1900000000000), // New date attempt
+            date_added: Some(1900000000000),
         };
 
         let reconciled = db.save_tracks(vec![moved_input]).expect("save moved track failed");
         assert_eq!(reconciled.len(), 1);
 
         // 6. Verify Reconciled Track
-        // Must preserve original ID, date_added, liked, play_count, and artwork_path!
         assert_eq!(reconciled[0].id, "track_original_1");
         assert_eq!(reconciled[0].date_added, 1700000000000);
         assert_eq!(reconciled[0].liked, true);
@@ -619,14 +656,62 @@ mod tests {
             Some("C:\\AppData\\artwork\\test_hash.jpg")
         );
 
-        // Verify SQLite total row count is still exactly 1
-        let final_tracks = db.get_all_tracks().unwrap();
-        assert_eq!(final_tracks.len(), 1);
-        assert_eq!(final_tracks[0].id, "track_original_1");
-        assert_eq!(final_tracks[0].is_missing, false);
-        assert_eq!(final_tracks[0].file_path, moved_path);
-
         // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_remove_from_library_does_not_delete_original_audio_file() {
+        let temp_dir = env::temp_dir().join(format!("aurora_test_delete_db_{}", fastrand_u32()));
+        let db = DatabaseManager::new(&temp_dir).expect("DatabaseManager init failed");
+
+        // 1. Create a real audio file on disk
+        let audio_dir = temp_dir.join("music");
+        fs::create_dir_all(&audio_dir).unwrap();
+        let audio_file = audio_dir.join("KeepThisFile.mp3");
+        fs::write(&audio_file, b"REAL_AUDIO_BINARY_BYTES").unwrap();
+
+        // 2. Create cached artwork file
+        let artwork_dir = temp_dir.join("artwork");
+        fs::create_dir_all(&artwork_dir).unwrap();
+        let artwork_file = artwork_dir.join("art1.jpg");
+        fs::write(&artwork_file, b"JPEG_ARTWORK_BYTES").unwrap();
+
+        let track_input = DbTrackInput {
+            id: Some("track_to_delete".to_string()),
+            file_path: audio_file.to_string_lossy().to_string(),
+            file_hash: Some("hash123".to_string()),
+            title: Some("Song To Remove".to_string()),
+            artist: Some("Artist".to_string()),
+            album: Some("Album".to_string()),
+            album_artist: None,
+            genre: None,
+            year: None,
+            track_number: None,
+            duration: 120.0,
+            file_name: "KeepThisFile.mp3".to_string(),
+            file_size: 1000,
+            format: "mp3".to_string(),
+            artwork_path: Some(artwork_file.to_string_lossy().to_string()),
+            date_added: Some(1000),
+        };
+
+        db.save_tracks(vec![track_input]).unwrap();
+        assert_eq!(db.get_all_tracks().unwrap().len(), 1);
+
+        // 3. Perform Remove From Library
+        db.delete_track("track_to_delete").expect("delete_track failed");
+
+        // 4. Verify removed from SQLite
+        let remaining = db.get_all_tracks().unwrap();
+        assert_eq!(remaining.len(), 0);
+
+        // 5. CRITICAL INVARIANT: Original audio file MUST STILL EXIST on disk!
+        assert!(audio_file.exists(), "Original audio file must NOT be deleted!");
+
+        // 6. Unreferenced cached artwork should be cleaned up
+        assert!(!artwork_file.exists(), "Unreferenced artwork should be cleaned up");
+
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }

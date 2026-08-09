@@ -280,4 +280,15 @@ export const persistenceService = {
       return null
     }
   },
+
+  removeTrack: async (id: string): Promise<boolean> => {
+    if (!isTauri()) return true
+    try {
+      await invoke('delete_track', { id })
+      return true
+    } catch (err) {
+      console.error('[PersistenceService] Failed to delete track from SQLite:', err)
+      return false
+    }
+  },
 }
