@@ -1,4 +1,6 @@
+import { isTauri } from '@tauri-apps/api/core'
 import { usePlayerStore } from '../../stores/playerStore'
+import { persistenceService } from '../../services/persistenceService'
 import { extractTrackMetadata } from '../metadata/metadataExtractor'
 import type { Track } from '../../types/player'
 
@@ -9,14 +11,65 @@ export function isSupportedAudioFile(fileName: string): boolean {
   return ext ? SUPPORTED_EXTENSIONS.has(ext) : false
 }
 
+function getMimeType(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  switch (ext) {
+    case 'mp3':
+      return 'audio/mpeg'
+    case 'wav':
+      return 'audio/wav'
+    case 'flac':
+      return 'audio/flac'
+    case 'm4a':
+    case 'aac':
+      return 'audio/mp4'
+    case 'ogg':
+    case 'opus':
+      return 'audio/ogg'
+    default:
+      return 'audio/*'
+  }
+}
+
 /**
- * Triggers native desktop file selection for a single audio track
+ * Triggers native desktop file selection for a single audio track with absolute filesystem path
  */
-export function importSingleAudioFile(): Promise<Track | null> {
+export async function importSingleAudioFile(): Promise<Track | null> {
+  // If running inside Tauri desktop app, use native OS file dialog to guarantee absolute filesystem path
+  if (isTauri()) {
+    try {
+      const selected = await persistenceService.pickAudioFile()
+      if (!selected) return null
+
+      const bytes = await persistenceService.readFileBytes(selected.path)
+      if (!bytes || bytes.length === 0) {
+        console.error('[Importer] Failed to read audio file bytes:', selected.path)
+        return null
+      }
+
+      const cleanBuffer = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer
+      const file = new File([cleanBuffer], selected.name, { type: getMimeType(selected.name) })
+
+      const rawTrack = await extractTrackMetadata(file, selected.path)
+      const [persistedTrack] = await persistenceService.persistTracks([rawTrack])
+      const finalTrack = persistedTrack || rawTrack
+      usePlayerStore.getState().addTracks([finalTrack], true)
+      return finalTrack
+    } catch (err) {
+      console.error('[Importer] Error in native single file import:', err)
+      return null
+    }
+  }
+
+  // Browser / Web fallback
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,audio/mpeg,audio/wav,audio/flac,audio/mp4,audio/aac,audio/ogg,audio/*'
+    input.accept =
+      '.mp3,.wav,.flac,.m4a,.aac,.ogg,.opus,audio/mpeg,audio/wav,audio/flac,audio/mp4,audio/aac,audio/ogg,audio/*'
     input.style.display = 'none'
     document.body.appendChild(input)
 
@@ -42,9 +95,11 @@ export function importSingleAudioFile(): Promise<Track | null> {
       }
 
       try {
-        const track = await extractTrackMetadata(file)
-        usePlayerStore.getState().addTracks([track], true)
-        resolve(track)
+        const rawTrack = await extractTrackMetadata(file)
+        const [persistedTrack] = await persistenceService.persistTracks([rawTrack])
+        const finalTrack = persistedTrack || rawTrack
+        usePlayerStore.getState().addTracks([finalTrack], true)
+        resolve(finalTrack)
       } catch (err) {
         console.error('[Importer] Failed to import audio file:', file.name, err)
         resolve(null)
@@ -63,7 +118,44 @@ export function importSingleAudioFile(): Promise<Track | null> {
 /**
  * Triggers native desktop folder selection and recursively discovers supported audio tracks
  */
-export function importAudioFolder(): Promise<Track[]> {
+export async function importAudioFolder(): Promise<Track[]> {
+  // If running inside Tauri desktop app, use native OS folder dialog
+  if (isTauri()) {
+    try {
+      const selectedFiles = await persistenceService.pickAudioFolder()
+      if (!selectedFiles || selectedFiles.length === 0) return []
+
+      const rawTracks: Track[] = []
+      for (const item of selectedFiles) {
+        try {
+          const bytes = await persistenceService.readFileBytes(item.path)
+          if (bytes && bytes.length > 0) {
+            const cleanBuffer = bytes.buffer.slice(
+              bytes.byteOffset,
+              bytes.byteOffset + bytes.byteLength,
+            ) as ArrayBuffer
+            const file = new File([cleanBuffer], item.name, { type: getMimeType(item.name) })
+            const track = await extractTrackMetadata(file, item.path)
+            rawTracks.push(track)
+          }
+        } catch (fileErr) {
+          console.warn('[Importer] Skipping invalid track in folder:', item.path, fileErr)
+        }
+      }
+
+      if (rawTracks.length === 0) return []
+
+      const persistedTracks = await persistenceService.persistTracks(rawTracks)
+      const finalTracks = persistedTracks.length > 0 ? persistedTracks : rawTracks
+      usePlayerStore.getState().addTracks(finalTracks, false)
+      return finalTracks
+    } catch (err) {
+      console.error('[Importer] Error in native folder import:', err)
+      return []
+    }
+  }
+
+  // Browser / Web fallback
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -103,10 +195,20 @@ export function importAudioFolder(): Promise<Track[]> {
       }
 
       try {
-        const trackPromises = files.map((file) => extractTrackMetadata(file))
-        const tracks = await Promise.all(trackPromises)
-        usePlayerStore.getState().addTracks(tracks, false)
-        resolve(tracks)
+        const rawTracks: Track[] = []
+        for (const file of files) {
+          try {
+            const track = await extractTrackMetadata(file)
+            rawTracks.push(track)
+          } catch (fileErr) {
+            console.warn('[Importer] Skipping invalid track:', file.name, fileErr)
+          }
+        }
+
+        const persistedTracks = await persistenceService.persistTracks(rawTracks)
+        const finalTracks = persistedTracks.length > 0 ? persistedTracks : rawTracks
+        usePlayerStore.getState().addTracks(finalTracks, false)
+        resolve(finalTracks)
       } catch (err) {
         console.error('[Importer] Error scanning audio folder:', err)
         resolve([])

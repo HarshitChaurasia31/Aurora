@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PanelLeftOpen } from 'lucide-react'
 import { Sidebar } from '../components/sidebar/Sidebar'
 import { AmbientBackground } from '../components/ambient/AmbientBackground'
@@ -8,10 +8,16 @@ import { AlbumArtwork } from '../components/player/AlbumArtwork'
 import { GlassPlayer } from '../components/player/GlassPlayer'
 import { LibraryView } from '../components/library/LibraryView'
 import { useNavigationStore } from '../stores/navigationStore'
+import { usePlayerStore } from '../stores/playerStore'
 
 export function AppShell() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const activeTab = useNavigationStore((state) => state.activeTab)
+  const initializeLibrary = usePlayerStore((state) => state.initializeLibrary)
+
+  useEffect(() => {
+    initializeLibrary()
+  }, [initializeLibrary])
 
   return (
     <main className="flex min-h-screen overflow-hidden bg-[#090b14] text-white">

@@ -1,4 +1,5 @@
 import * as mm from 'music-metadata-browser'
+import { persistenceService } from '../../services/persistenceService'
 import type { Track } from '../../types/player'
 
 export function getAudioDuration(url: string): Promise<number> {
@@ -39,7 +40,7 @@ function normalizeMimeType(format?: string): string {
 }
 
 /**
- * Fast direct ID3v2 binary parser for MP3/WAV/AIFF files (pure Web APIs: Uint8Array, DataView, TextDecoder)
+ * Fast direct ID3v2 binary parser for MP3/WAV/AIFF files
  */
 function parseDirectID3v2(buffer: Uint8Array): {
   title?: string
@@ -49,15 +50,14 @@ function parseDirectID3v2(buffer: Uint8Array): {
   year?: number
   genre?: string
   trackNumber?: number
-  artworkBlob?: Blob
+  artworkBytes?: Uint8Array
+  artworkMime?: string
 } | null {
   if (buffer.length < 10) return null
-  // 'ID3' magic bytes: 0x49, 0x44, 0x33
   if (buffer[0] !== 0x49 || buffer[1] !== 0x44 || buffer[2] !== 0x33) return null
 
-  const version = buffer[3] // 3 = ID3v2.3, 4 = ID3v2.4, 2 = ID3v2.2
+  const version = buffer[3]
   const flags = buffer[5]
-  // Synchsafe integer (7 bits each)
   const tagSize =
     ((buffer[6] & 0x7f) << 21) |
     ((buffer[7] & 0x7f) << 14) |
@@ -67,14 +67,14 @@ function parseDirectID3v2(buffer: Uint8Array): {
   const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength)
   let offset = 10
 
-  // Extended header
   if (flags & 0x40) {
     const extSize = version === 4 ? view.getUint32(offset) : view.getUint32(offset) + 4
     offset += extSize
   }
 
   const tags: Record<string, string> = {}
-  let artworkBlob: Blob | undefined
+  let artworkBytes: Uint8Array | undefined
+  let artworkMime: string | undefined
   const tagEnd = Math.min(offset + tagSize, buffer.length)
 
   while (offset + 10 <= tagEnd) {
@@ -131,10 +131,9 @@ function parseDirectID3v2(buffer: Uint8Array): {
         mime += String.fromCharCode(frameData[pOffset])
         pOffset++
       }
-      pOffset++ // skip null byte
-      pOffset++ // skip picture type (1 byte)
+      pOffset++ // skip null
+      pOffset++ // skip picture type
 
-      // Skip description
       if (encoding === 0 || encoding === 3) {
         while (pOffset < frameData.length && frameData[pOffset] !== 0) pOffset++
         pOffset++
@@ -149,13 +148,9 @@ function parseDirectID3v2(buffer: Uint8Array): {
       }
 
       if (pOffset < frameData.length) {
-        const picBytes = frameData.subarray(pOffset)
-        const mimeType = normalizeMimeType(mime)
-        const cleanBuffer = picBytes.buffer.slice(
-          picBytes.byteOffset,
-          picBytes.byteOffset + picBytes.byteLength,
-        ) as ArrayBuffer
-        artworkBlob = new Blob([cleanBuffer], { type: mimeType })
+        const rawPic = frameData.subarray(pOffset)
+        artworkMime = normalizeMimeType(mime)
+        artworkBytes = rawPic
       }
     }
   }
@@ -178,14 +173,22 @@ function parseDirectID3v2(buffer: Uint8Array): {
     year: Number.isFinite(year) ? year : undefined,
     genre,
     trackNumber: Number.isFinite(trackNumber) ? trackNumber : undefined,
-    artworkBlob,
+    artworkBytes,
+    artworkMime,
   }
 }
 
-export async function extractTrackMetadata(file: File): Promise<Track> {
+export async function extractTrackMetadata(file: File, explicitPath?: string): Promise<Track> {
   const fileUrl = URL.createObjectURL(file)
   const ext = file.name.split('.').pop()?.toLowerCase() || 'audio'
   const fallbackTitle = file.name.replace(/\.[^/.]+$/, '')
+
+  // Resolve absolute file path from File object in Electron/Tauri or explicit argument
+  const rawPath =
+    explicitPath ||
+    (file as unknown as { path?: string }).path ||
+    (file as unknown as { webkitRelativePath?: string }).webkitRelativePath ||
+    file.name
 
   let title = fallbackTitle
   let artist = 'Unknown Artist'
@@ -196,8 +199,11 @@ export async function extractTrackMetadata(file: File): Promise<Track> {
   let trackNumber: number | undefined
   let duration = 0
   let artworkUrl: string | null = null
+  let artworkPath: string | null = null
+  let extractedBytes: Uint8Array | undefined
+  let extractedMime: string | undefined
 
-  // Pass 1: Direct ID3 binary parsing for instant, reliable tag extraction
+  // Pass 1: Direct ID3 binary parsing for instant tag and artwork extraction
   try {
     const arrayBuffer = await file.slice(0, 512 * 1024).arrayBuffer()
     const id3 = parseDirectID3v2(new Uint8Array(arrayBuffer))
@@ -209,16 +215,17 @@ export async function extractTrackMetadata(file: File): Promise<Track> {
       if (id3.genre) genre = id3.genre
       if (id3.year) year = id3.year
       if (id3.trackNumber) trackNumber = id3.trackNumber
-      if (id3.artworkBlob) {
-        artworkUrl = URL.createObjectURL(id3.artworkBlob)
+      if (id3.artworkBytes && id3.artworkBytes.length > 0) {
+        extractedBytes = id3.artworkBytes
+        extractedMime = id3.artworkMime
       }
     }
   } catch (err) {
     console.warn('[MetadataExtractor] Direct ID3 pass error:', err)
   }
 
-  // Pass 2: music-metadata-browser pass for FLAC, OGG, M4A, or additional tags
-  if (artist === 'Unknown Artist' || album === 'Unknown Album' || !artworkUrl || duration === 0) {
+  // Pass 2: music-metadata-browser pass for FLAC, OGG, M4A, or fallback tags
+  if (artist === 'Unknown Artist' || album === 'Unknown Album' || !extractedBytes || duration === 0) {
     try {
       const meta = await mm.parseBlob(file, { duration: true, skipCovers: false })
 
@@ -249,17 +256,11 @@ export async function extractTrackMetadata(file: File): Promise<Track> {
         duration = meta.format.duration
       }
 
-      // Extract embedded artwork picture if not yet extracted
-      if (!artworkUrl && meta.common.picture && meta.common.picture.length > 0) {
+      if (!extractedBytes && meta.common.picture && meta.common.picture.length > 0) {
         const pic = meta.common.picture[0]
         if (pic.data && pic.data.length > 0) {
-          const mimeType = normalizeMimeType(pic.format)
-          const cleanBuffer = pic.data.buffer.slice(
-            pic.data.byteOffset,
-            pic.data.byteOffset + pic.data.byteLength,
-          ) as ArrayBuffer
-          const blob = new Blob([cleanBuffer], { type: mimeType })
-          artworkUrl = URL.createObjectURL(blob)
+          extractedBytes = Uint8Array.from(pic.data)
+          extractedMime = normalizeMimeType(pic.format)
         }
       }
     } catch (err) {
@@ -267,7 +268,7 @@ export async function extractTrackMetadata(file: File): Promise<Track> {
     }
   }
 
-  // Pass 3: If duration was not found in metadata header, probe via Audio element
+  // Pass 3: Probe duration via Audio element if still 0
   if (duration === 0) {
     try {
       duration = await getAudioDuration(fileUrl)
@@ -276,8 +277,34 @@ export async function extractTrackMetadata(file: File): Promise<Track> {
     }
   }
 
+  // Persist extracted artwork to disk cache via Tauri
+  if (extractedBytes && extractedBytes.length > 0) {
+    try {
+      artworkPath = await persistenceService.saveArtworkBytes(extractedBytes, extractedMime)
+      if (artworkPath) {
+        artworkUrl = await persistenceService.resolveArtworkSrc(artworkPath)
+      } else {
+        const cleanBuffer = extractedBytes.buffer.slice(
+          extractedBytes.byteOffset,
+          extractedBytes.byteOffset + extractedBytes.byteLength,
+        ) as ArrayBuffer
+        const blob = new Blob([cleanBuffer], { type: extractedMime || 'image/jpeg' })
+        artworkUrl = URL.createObjectURL(blob)
+      }
+    } catch (err) {
+      console.warn('[MetadataExtractor] Artwork persistence error:', err)
+      const cleanBuffer = extractedBytes.buffer.slice(
+        extractedBytes.byteOffset,
+        extractedBytes.byteOffset + extractedBytes.byteLength,
+      ) as ArrayBuffer
+      const blob = new Blob([cleanBuffer], { type: extractedMime || 'image/jpeg' })
+      artworkUrl = URL.createObjectURL(blob)
+    }
+  }
+
   return {
     id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).substring(2, 7)}`,
+    filePath: rawPath,
     title,
     artist,
     album,
@@ -287,11 +314,15 @@ export async function extractTrackMetadata(file: File): Promise<Track> {
     trackNumber,
     duration,
     artworkUrl,
+    artworkPath,
     file,
     fileUrl,
     fileName: file.name,
     fileSize: file.size,
     format: ext,
     dateAdded: Date.now(),
+    liked: false,
+    playCount: 0,
+    isMissing: false,
   }
 }

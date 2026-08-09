@@ -29,6 +29,10 @@ export function LibraryView() {
   })
 
   const handleTrackClick = (track: Track) => {
+    if (track.isMissing) {
+      console.warn('[LibraryView] Cannot play missing file:', track.filePath)
+      return
+    }
     playTrack(track, filteredTracks.length > 0 ? filteredTracks : library)
   }
 
@@ -131,13 +135,17 @@ export function LibraryView() {
                     onMouseEnter={() => setHoveredTrackId(track.id)}
                     onMouseLeave={() => setHoveredTrackId(null)}
                     onDoubleClick={() => {
-                      handleTrackClick(track)
-                      setActiveTab('Home')
+                      if (!track.isMissing) {
+                        handleTrackClick(track)
+                        setActiveTab('Home')
+                      }
                     }}
                     className={`group grid grid-cols-12 items-center gap-3 px-4 py-2.5 text-xs transition-colors cursor-pointer ${
-                      isSelected
-                        ? 'bg-violet-400/[0.12] text-white'
-                        : 'text-white/70 hover:bg-white/[0.04] hover:text-white'
+                      track.isMissing
+                        ? 'opacity-50 hover:bg-white/[0.02]'
+                        : isSelected
+                          ? 'bg-violet-400/[0.12] text-white'
+                          : 'text-white/70 hover:bg-white/[0.04] hover:text-white'
                     }`}
                   >
                     {/* Index or Play Button */}
@@ -146,11 +154,16 @@ export function LibraryView() {
                         <button
                           type="button"
                           aria-label={`Play ${track.title}`}
+                          disabled={track.isMissing}
                           onClick={(e) => {
                             e.stopPropagation()
                             handleTrackClick(track)
                           }}
-                          className="grid size-6 mx-auto place-items-center rounded-md bg-violet-400/20 text-violet-300 hover:bg-violet-400/30"
+                          className={`grid size-6 mx-auto place-items-center rounded-md ${
+                            track.isMissing
+                              ? 'text-white/20 cursor-not-allowed'
+                              : 'bg-violet-400/20 text-violet-300 hover:bg-violet-400/30'
+                          }`}
                         >
                           {isSelected && isPlaying ? (
                             <Volume2 className="size-3.5 text-violet-300 animate-pulse" />
@@ -177,7 +190,11 @@ export function LibraryView() {
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className={`truncate font-medium ${isSelected ? 'text-violet-200' : 'text-white/90'}`}>
+                        <p
+                          className={`truncate font-medium ${
+                            isSelected ? 'text-violet-200' : 'text-white/90'
+                          }`}
+                        >
                           {track.title}
                         </p>
                         <p className="truncate text-[11px] text-white/45">{track.artist}</p>
@@ -191,9 +208,15 @@ export function LibraryView() {
 
                     {/* Duration & Format Badge */}
                     <div className="col-span-5 sm:col-span-2 flex items-center justify-end gap-2.5 pr-2 font-variant-numeric-tabular">
-                      <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] uppercase font-mono tracking-wider text-white/40">
-                        {track.format}
-                      </span>
+                      {track.isMissing ? (
+                        <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 text-[9px] uppercase font-mono tracking-wider text-amber-300">
+                          Missing
+                        </span>
+                      ) : (
+                        <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] uppercase font-mono tracking-wider text-white/40">
+                          {track.format}
+                        </span>
+                      )}
                       <span className="text-white/50">{formatTime(track.duration)}</span>
                     </div>
                   </div>

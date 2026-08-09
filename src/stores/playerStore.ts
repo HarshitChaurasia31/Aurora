@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { audioEngine } from '../features/audio/audioEngine'
+import { persistenceService } from '../services/persistenceService'
 import type { RepeatMode, Track } from '../types/player'
 
 interface PlayerStoreState {
@@ -16,8 +17,10 @@ interface PlayerStoreState {
   shuffle: boolean
   repeatMode: RepeatMode
   searchQuery: string
+  isInitialized: boolean
 
   // Actions
+  initializeLibrary: () => Promise<void>
   addTracks: (tracks: Track[], autoPlayFirst?: boolean) => void
   playTrack: (track: Track, customQueue?: Track[]) => void
   togglePlay: () => void
@@ -30,6 +33,7 @@ interface PlayerStoreState {
   toggleMute: () => void
   toggleShuffle: () => void
   toggleRepeat: () => void
+  toggleLike: (trackId?: string) => void
   handleTrackEnded: () => void
   setCurrentTime: (currentTime: number) => void
   setDuration: (duration: number) => void
@@ -51,38 +55,126 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
   shuffle: false,
   repeatMode: 'off',
   searchQuery: '',
+  isInitialized: false,
+
+  initializeLibrary: async () => {
+    if (get().isInitialized) return
+    set({ isInitialized: true })
+
+    try {
+      const persistedTracks = await persistenceService.loadPersistedLibrary()
+      if (persistedTracks.length > 0) {
+        set({
+          library: persistedTracks,
+          queue: persistedTracks,
+          currentTrack: persistedTracks[0],
+          currentIndex: 0,
+          duration: persistedTracks[0].duration || 0,
+        })
+      }
+    } catch (err) {
+      console.warn('[PlayerStore] Error during initializeLibrary:', err)
+    }
+  },
 
   addTracks: (newTracks: Track[], autoPlayFirst = false) => {
     if (!newTracks || newTracks.length === 0) return
 
     const currentLib = get().library
-    // Avoid duplicate tracks by ID
-    const existingIds = new Set(currentLib.map((t) => t.id))
-    const uniqueNewTracks = newTracks.filter((t) => !existingIds.has(t.id))
+    const updatedLibrary = [...currentLib]
+    const trulyNewTracks: Track[] = []
 
-    if (uniqueNewTracks.length === 0) {
-      // If already in library and autoPlayFirst requested, play the existing match
-      if (autoPlayFirst && newTracks.length > 0) {
-        const match = currentLib.find((t) => t.id === newTracks[0].id) || currentLib.find((t) => t.fileName === newTracks[0].fileName)
-        if (match) {
-          get().playTrack(match, currentLib)
+    for (const track of newTracks) {
+      const existingIndex = updatedLibrary.findIndex(
+        (t) =>
+          t.id === track.id ||
+          t.filePath === track.filePath ||
+          (t.fileHash && track.fileHash && t.fileHash === track.fileHash),
+      )
+
+      if (existingIndex >= 0) {
+        // Reconcile moved/existing track in-place
+        updatedLibrary[existingIndex] = {
+          ...updatedLibrary[existingIndex],
+          ...track,
+          id: updatedLibrary[existingIndex].id,
+          liked: updatedLibrary[existingIndex].liked,
+          playCount: updatedLibrary[existingIndex].playCount,
+          dateAdded: updatedLibrary[existingIndex].dateAdded,
+          isMissing: false,
         }
+      } else {
+        updatedLibrary.push(track)
+        trulyNewTracks.push(track)
       }
-      return
     }
 
-    const updatedLibrary = [...currentLib, ...uniqueNewTracks]
-
-    set((state) => {
-      const updatedQueue = state.queue.length === 0 ? updatedLibrary : [...state.queue, ...uniqueNewTracks]
-      return {
-        library: updatedLibrary,
-        queue: updatedQueue,
-      }
+    // Also update queue in-place
+    const updatedQueue = get().queue.map((q) => {
+      const match = newTracks.find(
+        (t) =>
+          t.id === q.id ||
+          t.filePath === q.filePath ||
+          (t.fileHash && q.fileHash && t.fileHash === q.fileHash),
+      )
+      return match
+        ? {
+            ...q,
+            ...match,
+            id: q.id,
+            liked: q.liked,
+            playCount: q.playCount,
+            dateAdded: q.dateAdded,
+            isMissing: false,
+          }
+        : q
     })
 
-    if (autoPlayFirst && uniqueNewTracks.length > 0) {
-      get().playTrack(uniqueNewTracks[0], updatedLibrary)
+    // Append any truly new tracks to queue
+    for (const track of trulyNewTracks) {
+      if (!updatedQueue.some((q) => q.id === track.id)) {
+        updatedQueue.push(track)
+      }
+    }
+
+    // Update currentTrack if it was reconciled
+    const currentTrack = get().currentTrack
+    let updatedCurrentTrack = currentTrack
+    if (currentTrack) {
+      const match = newTracks.find(
+        (t) =>
+          t.id === currentTrack.id ||
+          t.filePath === currentTrack.filePath ||
+          (t.fileHash && currentTrack.fileHash && t.fileHash === currentTrack.fileHash),
+      )
+      if (match) {
+        updatedCurrentTrack = {
+          ...currentTrack,
+          ...match,
+          id: currentTrack.id,
+          liked: currentTrack.liked,
+          playCount: currentTrack.playCount,
+          dateAdded: currentTrack.dateAdded,
+          isMissing: false,
+        }
+      }
+    }
+
+    set({
+      library: updatedLibrary,
+      queue: updatedQueue.length > 0 ? updatedQueue : updatedLibrary,
+      currentTrack: updatedCurrentTrack,
+    })
+
+    if (autoPlayFirst && newTracks.length > 0) {
+      const targetToPlay =
+        updatedLibrary.find(
+          (t) =>
+            t.id === newTracks[0].id ||
+            t.filePath === newTracks[0].filePath ||
+            (t.fileHash && newTracks[0].fileHash && t.fileHash === newTracks[0].fileHash),
+        ) || newTracks[0]
+      get().playTrack(targetToPlay, updatedLibrary)
     } else if (!get().currentTrack && updatedLibrary.length > 0) {
       const firstTrack = updatedLibrary[0]
       set({
@@ -94,8 +186,18 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
   },
 
   playTrack: (track: Track, customQueue?: Track[]) => {
+    if (track.isMissing) {
+      console.warn('[PlayerStore] Cannot play track: File is missing on disk:', track.filePath)
+      return
+    }
+
     const queue = customQueue || (get().queue.length > 0 ? get().queue : get().library)
-    const index = queue.findIndex((t) => t.id === track.id)
+    const index = queue.findIndex(
+      (t) =>
+        t.id === track.id ||
+        t.filePath === track.filePath ||
+        (t.fileHash && track.fileHash && t.fileHash === track.fileHash),
+    )
 
     set({
       currentTrack: track,
@@ -168,7 +270,6 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       if (repeatMode === 'all') {
         nextIndex = 0
       } else {
-        // Reached end of queue without repeat all
         audioEngine.pause()
         set({ isPlaying: false, currentTime: 0 })
         return
@@ -185,7 +286,6 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
     const { queue, currentIndex, currentTime } = get()
     if (queue.length === 0) return
 
-    // If more than 3 seconds in, restart current track
     if (currentTime > 3) {
       audioEngine.seek(0)
       set({ currentTime: 0 })
@@ -244,8 +344,50 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
     })
   },
 
+  toggleLike: (trackId?: string) => {
+    const targetId = trackId || get().currentTrack?.id
+    if (!targetId) return
+
+    const { library, queue, currentTrack } = get()
+    const targetTrack = library.find((t) => t.id === targetId)
+    if (!targetTrack) return
+
+    const nextLiked = !targetTrack.liked
+
+    const updatedLibrary = library.map((t) =>
+      t.id === targetId ? { ...t, liked: nextLiked } : t,
+    )
+    const updatedQueue = queue.map((t) => (t.id === targetId ? { ...t, liked: nextLiked } : t))
+    const updatedCurrent =
+      currentTrack?.id === targetId ? { ...currentTrack, liked: nextLiked } : currentTrack
+
+    set({
+      library: updatedLibrary,
+      queue: updatedQueue,
+      currentTrack: updatedCurrent,
+    })
+
+    persistenceService.setTrackLiked(targetId, nextLiked)
+  },
+
   handleTrackEnded: () => {
     const { repeatMode, currentTrack, queue } = get()
+    if (currentTrack) {
+      persistenceService.incrementPlayCount(currentTrack.id).then((newCount) => {
+        if (newCount !== null) {
+          set((state) => ({
+            library: state.library.map((t) =>
+              t.id === currentTrack.id ? { ...t, playCount: newCount } : t,
+            ),
+            currentTrack:
+              state.currentTrack?.id === currentTrack.id
+                ? { ...state.currentTrack, playCount: newCount }
+                : state.currentTrack,
+          }))
+        }
+      })
+    }
+
     if (repeatMode === 'one' && currentTrack) {
       audioEngine.seek(0)
       audioEngine.play()

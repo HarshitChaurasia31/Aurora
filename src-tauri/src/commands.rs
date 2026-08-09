@@ -1,0 +1,226 @@
+use crate::db::{DatabaseManager, DbTrack, DbTrackInput};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Manager};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedAudioFile {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+}
+
+fn get_app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))
+}
+
+#[tauri::command]
+pub fn pick_audio_file() -> Result<Option<SelectedAudioFile>, String> {
+    let file = rfd::FileDialog::new()
+        .add_filter(
+            "Audio Files",
+            &["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus"],
+        )
+        .pick_file();
+
+    match file {
+        Some(path_buf) => {
+            let metadata = fs::metadata(&path_buf).map_err(|e| e.to_string())?;
+            let name = path_buf
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let path_str = path_buf.to_string_lossy().to_string();
+
+            Ok(Some(SelectedAudioFile {
+                path: path_str,
+                name,
+                size: metadata.len(),
+            }))
+        }
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub fn pick_audio_folder() -> Result<Vec<SelectedAudioFile>, String> {
+    let folder = rfd::FileDialog::new().pick_folder();
+
+    match folder {
+        Some(path_buf) => {
+            let mut results = Vec::new();
+            scan_directory(&path_buf, &mut results)?;
+            Ok(results)
+        }
+        None => Ok(Vec::new()),
+    }
+}
+
+fn scan_directory(dir: &Path, results: &mut Vec<SelectedAudioFile>) -> Result<(), String> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+
+    let entries = fs::read_dir(dir).map_err(|e| e.to_string())?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let _ = scan_directory(&path, results);
+        } else if is_supported_audio(&path) {
+            if let Ok(metadata) = fs::metadata(&path) {
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                results.push(SelectedAudioFile {
+                    path: path.to_string_lossy().to_string(),
+                    name,
+                    size: metadata.len(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_supported_audio(path: &Path) -> bool {
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        matches!(
+            ext.to_lowercase().as_str(),
+            "mp3" | "wav" | "flac" | "m4a" | "aac" | "ogg" | "opus"
+        )
+    } else {
+        false
+    }
+}
+
+#[tauri::command]
+pub fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
+    fs::read(&path).map_err(|e| format!("Failed to read file '{}': {}", path, e))
+}
+
+#[tauri::command]
+pub fn init_database(app: AppHandle) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let _db = DatabaseManager::new(&app_data)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_tracks(app: AppHandle, tracks: Vec<DbTrackInput>) -> Result<Vec<DbTrack>, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.save_tracks(tracks)
+}
+
+#[tauri::command]
+pub fn get_all_tracks(app: AppHandle) -> Result<Vec<DbTrack>, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.get_all_tracks()
+}
+
+#[tauri::command]
+pub fn save_artwork(
+    app: AppHandle,
+    hash: String,
+    bytes: Vec<u8>,
+    ext: Option<String>,
+) -> Result<String, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let artwork_dir = app_data.join("artwork");
+    if !artwork_dir.exists() {
+        fs::create_dir_all(&artwork_dir)
+            .map_err(|e| format!("Failed to create artwork cache directory: {}", e))?;
+    }
+
+    let extension = ext.unwrap_or_else(|| "jpg".to_string());
+    let file_name = format!("{}.{}", hash, extension);
+    let target_path = artwork_dir.join(file_name);
+
+    if !target_path.exists() {
+        fs::write(&target_path, bytes)
+            .map_err(|e| format!("Failed to write cached artwork file: {}", e))?;
+    }
+
+    Ok(target_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn read_artwork_data_url(path: String) -> Result<String, String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err("Artwork file not found".to_string());
+    }
+
+    let bytes = fs::read(p).map_err(|e| format!("Failed to read artwork file: {}", e))?;
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("jpeg")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "image/jpeg",
+    };
+
+    let base64_str = simple_base64_encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, base64_str))
+}
+
+#[tauri::command]
+pub fn update_track_liked(app: AppHandle, id: String, liked: bool) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.update_track_liked(&id, liked)
+}
+
+#[tauri::command]
+pub fn increment_play_count(app: AppHandle, id: String) -> Result<i64, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.increment_play_count(&id)
+}
+
+#[tauri::command]
+pub fn check_file_exists(path: String) -> Result<bool, String> {
+    Ok(Path::new(&path).exists())
+}
+
+fn simple_base64_encode(data: &[u8]) -> String {
+    const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] } else { 0 };
+
+        let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
+
+        result.push(CHARSET[((n >> 18) & 63) as usize] as char);
+        result.push(CHARSET[((n >> 12) & 63) as usize] as char);
+
+        if chunk.len() > 1 {
+            result.push(CHARSET[((n >> 6) & 63) as usize] as char);
+        } else {
+            result.push('=');
+        }
+
+        if chunk.len() > 2 {
+            result.push(CHARSET[(n & 63) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+
+    result
+}
