@@ -4,21 +4,28 @@ import { PanelLeftOpen } from 'lucide-react'
 import { Sidebar } from '../components/sidebar/Sidebar'
 import { AmbientBackground } from '../components/ambient/AmbientBackground'
 import { AmbientDevSwitcher } from '../components/ambient/AmbientDevSwitcher'
+import { AlbumArtwork } from '../components/player/AlbumArtwork'
+import { GlassPlayer } from '../components/player/GlassPlayer'
+import { LibraryView } from '../components/library/LibraryView'
+import { useNavigationStore } from '../stores/navigationStore'
 
 export function AppShell() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+  const activeTab = useNavigationStore((state) => state.activeTab)
 
   return (
     <main className="flex min-h-screen overflow-hidden bg-[#090b14] text-white">
+      {/* Collapsible Left Sidebar (Phase 2) */}
       <AnimatePresence initial={false}>
         {isSidebarOpen ? <Sidebar key="sidebar" onCollapse={() => setIsSidebarOpen(false)} /> : null}
       </AnimatePresence>
 
-      <section className="relative flex min-w-0 flex-1 items-center justify-center overflow-hidden bg-[#0b0e18]">
-        {/* Ambient video background layer & dark cinematic overlay */}
+      {/* Main Content Area (Phase 3 Ambient Layer + Phase 4 Artwork + Phase 5/5.5 Player) */}
+      <section className="relative flex min-w-0 flex-1 flex-col items-center justify-center overflow-hidden bg-[#0b0e18]">
+        {/* Phase 3 Ambient Video Background & Dark Cinematic Overlay */}
         <AmbientBackground />
 
-        {/* Restore sidebar button */}
+        {/* Restore Sidebar Button */}
         <AnimatePresence>
           {!isSidebarOpen ? (
             <motion.button
@@ -36,14 +43,23 @@ export function AppShell() {
           ) : null}
         </AnimatePresence>
 
-        {/* Central main content */}
-        <div className="relative z-10 text-center select-none px-6">
-          <p className="text-xs font-medium uppercase tracking-[0.32em] text-violet-200/60">Aurora</p>
-          <h1 className="mt-4 text-2xl font-medium tracking-tight text-white/90">Your music. Your atmosphere.</h1>
-          <p className="mt-3 text-sm text-white/40">Atmospheric background</p>
-        </div>
+        {/* Active View Container */}
+        {activeTab === 'Library' ? (
+          <LibraryView />
+        ) : (
+          /* Primary Central Experience (Artwork + Glass Player) */
+          <div className="relative z-10 flex flex-col items-center justify-center px-4 w-full -translate-y-1 lg:-translate-y-2">
+            {/* Phase 4/5.5 Central Album Artwork */}
+            <AlbumArtwork />
 
-        {/* Development ambient mood switcher */}
+            {/* Phase 5/5.5 Single Primary Glassmorphism Player Capsule */}
+            <div className="mt-4 lg:mt-5">
+              <GlassPlayer />
+            </div>
+          </div>
+        )}
+
+        {/* Phase 3 Development Mood Switcher (import.meta.env.DEV only) */}
         <AmbientDevSwitcher />
       </section>
     </main>
