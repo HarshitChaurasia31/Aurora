@@ -17,6 +17,8 @@ import { CreateCustomMoodModal } from '../components/ambient/CreateCustomMoodMod
 import { RenameCustomMoodModal } from '../components/ambient/RenameCustomMoodModal'
 import { RelinkCustomMoodModal } from '../components/ambient/RelinkCustomMoodModal'
 import { DeleteCustomMoodModal } from '../components/ambient/DeleteCustomMoodModal'
+import { SettingsView } from '../components/settings/SettingsView'
+import { ResetSettingsModal } from '../components/settings/ResetSettingsModal'
 import { AlbumsView } from '../components/albums/AlbumsView'
 import { ArtistsView } from '../components/artists/ArtistsView'
 import { LikedSongsView } from '../components/liked/LikedSongsView'
@@ -133,12 +135,7 @@ export function AppShell() {
           ) : activeTab === 'Liked Songs' ? (
             <LikedSongsView />
           ) : activeTab === 'Settings' ? (
-            <div className="flex flex-col items-center justify-center p-8 text-center my-auto">
-              <h2 className="text-xl font-medium text-white/90">Settings</h2>
-              <p className="mt-2 text-xs text-white/45 max-w-sm">
-                Aurora Desktop • Local Persistence via SQLite • Tauri 2.0
-              </p>
-            </div>
+            <SettingsView />
           ) : (
             /* Home Screen: VISUALLY FROZEN (Album Artwork + Liquid Glass Player) */
             <div className="flex flex-col items-center justify-center px-4 w-full my-auto -translate-y-1 lg:-translate-y-2">
@@ -170,6 +167,9 @@ export function AppShell() {
         <RenameCustomMoodModal />
         <RelinkCustomMoodModal />
         <DeleteCustomMoodModal />
+
+        {/* Settings Modals */}
+        <ResetSettingsModal />
       </section>
     </main>
   )

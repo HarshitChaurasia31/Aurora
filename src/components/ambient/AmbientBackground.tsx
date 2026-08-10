@@ -2,13 +2,15 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { memo, useEffect, useRef, useState } from 'react'
 import { getAmbientVideoAsset } from '../../features/ambient/ambientAssets'
 import { useAmbientStore } from '../../stores/ambientStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 
 interface AmbientVideoLayerProps {
   mood: string
   src: string
+  intensity: number
 }
 
-const AmbientVideoLayer = memo(function AmbientVideoLayer({ mood, src }: AmbientVideoLayerProps) {
+const AmbientVideoLayer = memo(function AmbientVideoLayer({ mood, src, intensity }: AmbientVideoLayerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [hasError, setHasError] = useState(false)
 
@@ -43,9 +45,10 @@ const AmbientVideoLayer = memo(function AmbientVideoLayer({ mood, src }: Ambient
   return (
     <motion.div
       key={mood}
-      className="absolute inset-0 size-full overflow-hidden"
+      className="absolute inset-0 size-full overflow-hidden transition-opacity duration-300"
+      style={{ opacity: Math.max(0.1, Math.min(1.0, intensity)) }}
       initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
+      animate={{ opacity: Math.max(0.1, Math.min(1.0, intensity)) }}
       exit={{ opacity: 0 }}
       transition={{ duration: 2, ease: [0.25, 0.1, 0.25, 1] }}
     >
@@ -75,11 +78,17 @@ export function AmbientBackground() {
   const customMoods = useAmbientStore((state) => state.customMoods)
   const loadCustomMoods = useAmbientStore((state) => state.loadCustomMoods)
 
+  const ambientVideoEnabled = useSettingsStore((state) => state.settings.ambientVideoEnabled)
+  const ambientIntensity = useSettingsStore((state) => state.settings.ambientIntensity)
+  const loadSettings = useSettingsStore((state) => state.loadSettings)
+
   useEffect(() => {
     loadCustomMoods()
-  }, [loadCustomMoods])
+    loadSettings()
+  }, [loadCustomMoods, loadSettings])
 
   const activeVideoSrc = getAmbientVideoAsset(currentMood, customMoods)
+  const isVideoVisible = ambientVideoEnabled && currentMood !== 'none' && activeVideoSrc
 
   return (
     <div
@@ -88,8 +97,13 @@ export function AmbientBackground() {
     >
       {/* Video layer with crossfade transitions */}
       <AnimatePresence mode="sync">
-        {currentMood !== 'none' && activeVideoSrc ? (
-          <AmbientVideoLayer key={currentMood} mood={currentMood} src={activeVideoSrc} />
+        {isVideoVisible ? (
+          <AmbientVideoLayer
+            key={currentMood}
+            mood={currentMood}
+            src={activeVideoSrc}
+            intensity={ambientIntensity}
+          />
         ) : null}
       </AnimatePresence>
 

@@ -1,4 +1,6 @@
-use crate::db::{DatabaseManager, DbCustomMood, DbPlaylist, DbPlaylistDetail, DbTrack, DbTrackInput};
+use crate::db::{
+    DatabaseManager, DbAppSettings, DbCustomMood, DbPlaylist, DbPlaylistDetail, DbStorageStats, DbTrack, DbTrackInput,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -303,6 +305,43 @@ pub fn delete_custom_mood(app: AppHandle, id: String) -> Result<(), String> {
     let app_data = get_app_data_dir(&app)?;
     let db = DatabaseManager::new(&app_data)?;
     db.delete_custom_mood(&id)
+}
+
+#[tauri::command]
+pub fn get_app_settings(app: AppHandle) -> Result<DbAppSettings, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.get_app_settings()
+}
+
+#[tauri::command]
+pub fn update_app_settings(app: AppHandle, settings: DbAppSettings) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.update_app_settings(settings)
+}
+
+#[tauri::command]
+pub fn reset_app_settings(app: AppHandle) -> Result<DbAppSettings, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.reset_app_settings()
+}
+
+#[tauri::command]
+pub fn get_storage_stats(app: AppHandle) -> Result<DbStorageStats, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.get_storage_stats(&app_data)
+}
+
+#[tauri::command]
+pub fn pick_music_folder() -> Result<Option<String>, String> {
+    let folder = rfd::FileDialog::new().pick_folder();
+    match folder {
+        Some(path_buf) => Ok(Some(path_buf.to_string_lossy().to_string())),
+        None => Ok(None),
+    }
 }
 
 fn simple_base64_encode(data: &[u8]) -> String {

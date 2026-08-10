@@ -31,7 +31,12 @@ pub fn run() {
             get_all_custom_moods,
             rename_custom_mood,
             update_custom_mood_video,
-            delete_custom_mood
+            delete_custom_mood,
+            get_app_settings,
+            update_app_settings,
+            reset_app_settings,
+            get_storage_stats,
+            pick_music_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running Aurora");

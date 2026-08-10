@@ -2,6 +2,7 @@ import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core'
 import type { CustomMood } from '../types/ambient'
 import type { Track } from '../types/player'
 import type { Playlist, PlaylistDetail } from '../types/playlist'
+import type { AppSettings, StorageStats } from '../types/settings'
 
 export interface SelectedAudioFile {
   path: string
@@ -501,6 +502,79 @@ export const persistenceService = {
     } catch (err) {
       console.error('[PersistenceService] Failed to delete custom mood:', err)
       return false
+    }
+  },
+
+  // ==========================================
+  // PHASE 8C: SETTINGS & STORAGE STATS
+  // ==========================================
+
+  getAppSettings: async (): Promise<AppSettings> => {
+    if (!isTauri()) {
+      return {
+        startWithLastMood: true,
+        resumePlayerState: false,
+        autoplayOnImport: true,
+        defaultVolume: 1.0,
+        ambientVideoEnabled: true,
+        ambientIntensity: 1.0,
+        musicDirectory: 'D:\\Music',
+      }
+    }
+    try {
+      return await invoke<AppSettings>('get_app_settings')
+    } catch (err) {
+      console.error('[PersistenceService] Failed to get app settings:', err)
+      return {
+        startWithLastMood: true,
+        resumePlayerState: false,
+        autoplayOnImport: true,
+        defaultVolume: 1.0,
+        ambientVideoEnabled: true,
+        ambientIntensity: 1.0,
+        musicDirectory: 'D:\\Music',
+      }
+    }
+  },
+
+  updateAppSettings: async (settings: AppSettings): Promise<boolean> => {
+    if (!isTauri()) return false
+    try {
+      await invoke('update_app_settings', { settings })
+      return true
+    } catch (err) {
+      console.error('[PersistenceService] Failed to update app settings:', err)
+      return false
+    }
+  },
+
+  resetAppSettings: async (): Promise<AppSettings | null> => {
+    if (!isTauri()) return null
+    try {
+      return await invoke<AppSettings>('reset_app_settings')
+    } catch (err) {
+      console.error('[PersistenceService] Failed to reset app settings:', err)
+      return null
+    }
+  },
+
+  getStorageStats: async (): Promise<StorageStats | null> => {
+    if (!isTauri()) return null
+    try {
+      return await invoke<StorageStats>('get_storage_stats')
+    } catch (err) {
+      console.error('[PersistenceService] Failed to get storage stats:', err)
+      return null
+    }
+  },
+
+  pickMusicFolder: async (): Promise<string | null> => {
+    if (!isTauri()) return null
+    try {
+      return await invoke<string | null>('pick_music_folder')
+    } catch (err) {
+      console.error('[PersistenceService] Failed to pick music folder:', err)
+      return null
     }
   },
 }

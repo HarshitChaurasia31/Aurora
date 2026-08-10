@@ -81,6 +81,28 @@ pub struct DbCustomMood {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAppSettings {
+    pub start_with_last_mood: bool,
+    pub resume_player_state: bool,
+    pub autoplay_on_import: bool,
+    pub default_volume: f64,
+    pub ambient_video_enabled: bool,
+    pub ambient_intensity: f64,
+    pub music_directory: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbStorageStats {
+    pub track_count: i64,
+    pub playlist_count: i64,
+    pub custom_mood_count: i64,
+    pub db_size_bytes: i64,
+    pub artwork_cache_size_bytes: i64,
+}
+
 pub fn compute_file_sha256(path: &Path) -> Option<String> {
     let mut file = fs::File::open(path).ok()?;
     let mut hasher = Sha256::new();
@@ -321,6 +343,48 @@ impl DatabaseManager {
                 [],
             )
             .map_err(|e| format!("Failed to record Migration 4: {}", e))?;
+        }
+
+        // Migration 5: Add App Settings Table
+        let migration_5_applied: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM _migrations WHERE version = 5)",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if !migration_5_applied {
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS app_settings (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    start_with_last_mood INTEGER NOT NULL DEFAULT 1,
+                    resume_player_state INTEGER NOT NULL DEFAULT 0,
+                    autoplay_on_import INTEGER NOT NULL DEFAULT 1,
+                    default_volume REAL NOT NULL DEFAULT 1.0,
+                    ambient_video_enabled INTEGER NOT NULL DEFAULT 1,
+                    ambient_intensity REAL NOT NULL DEFAULT 1.0,
+                    music_directory TEXT,
+                    updated_at INTEGER NOT NULL
+                );",
+                [],
+            )
+            .map_err(|e| format!("Migration 5 failed to create app_settings table: {}", e))?;
+
+            conn.execute(
+                "INSERT OR IGNORE INTO app_settings (
+                    id, start_with_last_mood, resume_player_state, autoplay_on_import,
+                    default_volume, ambient_video_enabled, ambient_intensity, music_directory, updated_at
+                ) VALUES (1, 1, 0, 1, 1.0, 1, 1.0, 'D:\\Music', 0);",
+                [],
+            )
+            .map_err(|e| format!("Migration 5 failed to initialize default app_settings: {}", e))?;
+
+            conn.execute(
+                "INSERT INTO _migrations (version, applied_at) VALUES (5, datetime('now'));",
+                [],
+            )
+            .map_err(|e| format!("Failed to record Migration 5: {}", e))?;
         }
 
         Ok(())
@@ -1142,6 +1206,137 @@ impl DatabaseManager {
             .map_err(|e| format!("Failed to delete custom mood record: {}", e))?;
         Ok(())
     }
+
+    // ==========================================
+    // PHASE 8C: SETTINGS & STORAGE STATS
+    // ==========================================
+
+    pub fn get_app_settings(&self) -> Result<DbAppSettings, String> {
+        let conn = self.get_connection()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT start_with_last_mood, resume_player_state, autoplay_on_import,
+                        default_volume, ambient_video_enabled, ambient_intensity, music_directory
+                 FROM app_settings WHERE id = 1",
+            )
+            .map_err(|e| format!("Failed to prepare get_app_settings: {}", e))?;
+
+        let settings = stmt
+            .query_row([], |row| {
+                Ok(DbAppSettings {
+                    start_with_last_mood: row.get::<_, i64>(0)? == 1,
+                    resume_player_state: row.get::<_, i64>(1)? == 1,
+                    autoplay_on_import: row.get::<_, i64>(2)? == 1,
+                    default_volume: row.get::<_, f64>(3)?,
+                    ambient_video_enabled: row.get::<_, i64>(4)? == 1,
+                    ambient_intensity: row.get::<_, f64>(5)?,
+                    music_directory: row.get::<_, Option<String>>(6)?,
+                })
+            })
+            .optional()
+            .map_err(|e| format!("Query app_settings error: {}", e))?
+            .unwrap_or(DbAppSettings {
+                start_with_last_mood: true,
+                resume_player_state: false,
+                autoplay_on_import: true,
+                default_volume: 1.0,
+                ambient_video_enabled: true,
+                ambient_intensity: 1.0,
+                music_directory: Some("D:\\Music".into()),
+            });
+
+        Ok(settings)
+    }
+
+    pub fn update_app_settings(&self, settings: DbAppSettings) -> Result<(), String> {
+        let conn = self.get_connection()?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        conn.execute(
+            "UPDATE app_settings SET
+                start_with_last_mood = ?1,
+                resume_player_state = ?2,
+                autoplay_on_import = ?3,
+                default_volume = ?4,
+                ambient_video_enabled = ?5,
+                ambient_intensity = ?6,
+                music_directory = ?7,
+                updated_at = ?8
+             WHERE id = 1;",
+            params![
+                if settings.start_with_last_mood { 1 } else { 0 },
+                if settings.resume_player_state { 1 } else { 0 },
+                if settings.autoplay_on_import { 1 } else { 0 },
+                settings.default_volume,
+                if settings.ambient_video_enabled { 1 } else { 0 },
+                settings.ambient_intensity,
+                settings.music_directory,
+                now
+            ],
+        )
+        .map_err(|e| format!("Failed to update app_settings: {}", e))?;
+
+        Ok(())
+    }
+
+    pub fn reset_app_settings(&self) -> Result<DbAppSettings, String> {
+        let defaults = DbAppSettings {
+            start_with_last_mood: true,
+            resume_player_state: false,
+            autoplay_on_import: true,
+            default_volume: 1.0,
+            ambient_video_enabled: true,
+            ambient_intensity: 1.0,
+            music_directory: Some("D:\\Music".into()),
+        };
+        self.update_app_settings(defaults.clone())?;
+        Ok(defaults)
+    }
+
+    pub fn get_storage_stats(&self, app_data_dir: &Path) -> Result<DbStorageStats, String> {
+        let conn = self.get_connection()?;
+
+        let track_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tracks", [], |r| r.get(0))
+            .unwrap_or(0);
+
+        let playlist_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM playlists", [], |r| r.get(0))
+            .unwrap_or(0);
+
+        let custom_mood_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM custom_moods", [], |r| r.get(0))
+            .unwrap_or(0);
+
+        let db_size_bytes = fs::metadata(&self.db_path)
+            .map(|m| m.len() as i64)
+            .unwrap_or(0);
+
+        let mut artwork_cache_size_bytes = 0i64;
+        let artwork_dir = app_data_dir.join("artwork");
+        if artwork_dir.is_dir() {
+            if let Ok(entries) = fs::read_dir(artwork_dir) {
+                for entry in entries.flatten() {
+                    if let Ok(meta) = entry.metadata() {
+                        if meta.is_file() {
+                            artwork_cache_size_bytes += meta.len() as i64;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(DbStorageStats {
+            track_count,
+            playlist_count,
+            custom_mood_count,
+            db_size_bytes,
+            artwork_cache_size_bytes,
+        })
+    }
 }
 
 fn fastrand_u32() -> u32 {
@@ -1484,6 +1679,58 @@ mod tests {
         db.delete_custom_mood(&created.id).unwrap();
         assert_eq!(db.get_all_custom_moods().unwrap().len(), 0);
         assert!(Path::new(&new_video_path).exists());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_settings_and_storage_stats_lifecycle() {
+        let temp_dir = env::temp_dir().join(format!("aurora_test_settings_db_{}", fastrand_u32()));
+        let db = DatabaseManager::new(&temp_dir).expect("DatabaseManager init failed");
+
+        // 1. Get initial default settings
+        let settings = db.get_app_settings().unwrap();
+        assert_eq!(settings.start_with_last_mood, true);
+        assert_eq!(settings.resume_player_state, false);
+        assert_eq!(settings.autoplay_on_import, true);
+        assert_eq!(settings.default_volume, 1.0);
+        assert_eq!(settings.ambient_video_enabled, true);
+        assert_eq!(settings.ambient_intensity, 1.0);
+        assert_eq!(settings.music_directory.as_deref(), Some("D:\\Music"));
+
+        // 2. Update settings
+        let updated = DbAppSettings {
+            start_with_last_mood: false,
+            resume_player_state: true,
+            autoplay_on_import: false,
+            default_volume: 0.85,
+            ambient_video_enabled: false,
+            ambient_intensity: 0.6,
+            music_directory: Some("E:\\Audio".to_string()),
+        };
+        db.update_app_settings(updated).unwrap();
+
+        let after_update = db.get_app_settings().unwrap();
+        assert_eq!(after_update.start_with_last_mood, false);
+        assert_eq!(after_update.resume_player_state, true);
+        assert_eq!(after_update.autoplay_on_import, false);
+        assert_eq!(after_update.default_volume, 0.85);
+        assert_eq!(after_update.ambient_video_enabled, false);
+        assert_eq!(after_update.ambient_intensity, 0.6);
+        assert_eq!(after_update.music_directory.as_deref(), Some("E:\\Audio"));
+
+        // 3. Reset settings
+        let reset = db.reset_app_settings().unwrap();
+        assert_eq!(reset.start_with_last_mood, true);
+        assert_eq!(reset.resume_player_state, false);
+        assert_eq!(reset.default_volume, 1.0);
+
+        // 4. Test storage stats
+        let stats = db.get_storage_stats(&temp_dir).unwrap();
+        assert_eq!(stats.track_count, 0);
+        assert_eq!(stats.playlist_count, 0);
+        assert_eq!(stats.custom_mood_count, 0);
+        assert!(stats.db_size_bytes > 0);
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
