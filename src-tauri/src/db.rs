@@ -1915,4 +1915,62 @@ mod tests {
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_track_persistence_and_application_restart_simulation() {
+        let temp_dir = env::temp_dir().join(format!("aurora_test_restart_{}", fastrand_u32()));
+        
+        // 1. First Session: Save new tracks
+        {
+            let db = DatabaseManager::new(&temp_dir).expect("DatabaseManager init failed");
+            let music_dir = temp_dir.join("music");
+            fs::create_dir_all(&music_dir).unwrap();
+            let track1_file = music_dir.join("test_song.mp3");
+            fs::write(&track1_file, b"MOCK_AUDIO_DATA_FOR_PERSISTENCE_TEST_123").unwrap();
+
+            let inputs = vec![DbTrackInput {
+                id: Some("track_persisted_1".to_string()),
+                file_path: track1_file.to_string_lossy().to_string(),
+                file_hash: Some("mock_sha256_hash_1".to_string()),
+                title: Some("Starlight Echoes".to_string()),
+                artist: Some("Aurora Ensemble".to_string()),
+                album: Some("Cosmic Nights".to_string()),
+                album_artist: Some("Aurora Ensemble".to_string()),
+                genre: Some("Ambient".to_string()),
+                year: Some(2026),
+                track_number: Some(1),
+                duration: 245.5,
+                file_name: "test_song.mp3".to_string(),
+                file_size: 10240,
+                format: "mp3".to_string(),
+                artwork_path: Some(temp_dir.join("artwork/cover.jpg").to_string_lossy().to_string()),
+                date_added: Some(1770000000000),
+            }];
+
+            let saved = db.save_tracks(inputs).unwrap();
+            assert_eq!(saved.len(), 1);
+            assert_eq!(saved[0].title.as_deref(), Some("Starlight Echoes"));
+
+            // Update like state and play count in Session 1
+            db.update_track_liked(&saved[0].id, true).unwrap();
+            db.increment_play_count(&saved[0].id).unwrap();
+        }
+
+        // 2. Second Session (Application Restart): Reconnect to same db_path and load library
+        {
+            let db_restarted = DatabaseManager::new(&temp_dir).expect("DatabaseManager reload failed");
+            let all_tracks = db_restarted.get_all_tracks().unwrap();
+            assert_eq!(all_tracks.len(), 1);
+            let t = &all_tracks[0];
+            assert_eq!(t.id, "track_persisted_1");
+            assert_eq!(t.title.as_deref(), Some("Starlight Echoes"));
+            assert_eq!(t.artist.as_deref(), Some("Aurora Ensemble"));
+            assert_eq!(t.album.as_deref(), Some("Cosmic Nights"));
+            assert_eq!(t.liked, true);
+            assert_eq!(t.play_count, 1);
+            assert_eq!(t.is_missing, false);
+        }
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
 }

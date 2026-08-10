@@ -163,12 +163,14 @@ export const persistenceService = {
     return resolveArtworkSrc(artworkPath)
   },
 
-  saveArtworkCache: async (bytes: Uint8Array, format = 'jpg'): Promise<string | null> => {
+  saveArtworkCache: async (bytes: Uint8Array, format = 'jpg', hash?: string): Promise<string | null> => {
     if (!isTauri()) return null
     try {
       const path = await invoke<string>('save_artwork', {
         bytes: Array.from(bytes),
+        ext: format,
         format,
+        hash: hash || null,
       })
       return path
     } catch (err) {
@@ -177,9 +179,9 @@ export const persistenceService = {
     }
   },
 
-  saveArtworkBytes: async (bytes: Uint8Array, mime?: string): Promise<string | null> => {
+  saveArtworkBytes: async (bytes: Uint8Array, mime?: string, hash?: string): Promise<string | null> => {
     const format = mime?.includes('png') ? 'png' : mime?.includes('webp') ? 'webp' : 'jpg'
-    return persistenceService.saveArtworkCache(bytes, format)
+    return persistenceService.saveArtworkCache(bytes, format, hash)
   },
 
   saveTracks: async (tracks: Track[]): Promise<Track[]> => {
@@ -207,7 +209,10 @@ export const persistenceService = {
         dateAdded: t.dateAdded || Date.now(),
       }))
 
-      const savedDbTracks = await invoke<DbTrack[]>('save_tracks', { inputs })
+      const savedDbTracks = await invoke<DbTrack[]>('save_tracks', {
+        tracks: inputs,
+        inputs,
+      })
 
       return await Promise.all(
         savedDbTracks.map(async (dbTrack) => {

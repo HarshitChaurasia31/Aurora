@@ -116,10 +116,15 @@ pub fn init_database(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_tracks(app: AppHandle, tracks: Vec<DbTrackInput>) -> Result<Vec<DbTrack>, String> {
+pub fn save_tracks(
+    app: AppHandle,
+    tracks: Option<Vec<DbTrackInput>>,
+    inputs: Option<Vec<DbTrackInput>>,
+) -> Result<Vec<DbTrack>, String> {
     let app_data = get_app_data_dir(&app)?;
     let db = DatabaseManager::new(&app_data)?;
-    db.save_tracks(tracks)
+    let track_inputs = tracks.or(inputs).unwrap_or_default();
+    db.save_tracks(track_inputs)
 }
 
 #[tauri::command]
@@ -132,9 +137,10 @@ pub fn get_all_tracks(app: AppHandle) -> Result<Vec<DbTrack>, String> {
 #[tauri::command]
 pub fn save_artwork(
     app: AppHandle,
-    hash: String,
+    hash: Option<String>,
     bytes: Vec<u8>,
     ext: Option<String>,
+    format: Option<String>,
 ) -> Result<String, String> {
     let app_data = get_app_data_dir(&app)?;
     let artwork_dir = app_data.join("artwork");
@@ -143,8 +149,15 @@ pub fn save_artwork(
             .map_err(|e| format!("Failed to create artwork cache directory: {}", e))?;
     }
 
-    let extension = ext.unwrap_or_else(|| "jpg".to_string());
-    let file_name = format!("{}.{}", hash, extension);
+    let extension = ext.or(format).unwrap_or_else(|| "jpg".to_string());
+    let file_hash = hash.unwrap_or_else(|| {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        format!("{:x}", hasher.finalize())
+    });
+
+    let file_name = format!("{}.{}", file_hash, extension);
     let target_path = artwork_dir.join(file_name);
 
     if !target_path.exists() {
