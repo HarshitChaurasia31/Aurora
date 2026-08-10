@@ -103,6 +103,19 @@ pub struct DbStorageStats {
     pub artwork_cache_size_bytes: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbPlaybackState {
+    pub current_track_id: Option<String>,
+    pub current_position: f64,
+    pub queue_track_ids: Vec<String>,
+    pub queue_index: i64,
+    pub shuffle: bool,
+    pub repeat_mode: String,
+    pub volume: f64,
+    pub is_muted: bool,
+}
+
 pub fn compute_file_sha256(path: &Path) -> Option<String> {
     let mut file = fs::File::open(path).ok()?;
     let mut hasher = Sha256::new();
@@ -385,6 +398,49 @@ impl DatabaseManager {
                 [],
             )
             .map_err(|e| format!("Failed to record Migration 5: {}", e))?;
+        }
+
+        // Migration 6: Add Playback State Table
+        let migration_6_applied: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM _migrations WHERE version = 6)",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if !migration_6_applied {
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS playback_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    current_track_id TEXT,
+                    current_position REAL NOT NULL DEFAULT 0.0,
+                    queue_track_ids TEXT NOT NULL DEFAULT '[]',
+                    queue_index INTEGER NOT NULL DEFAULT 0,
+                    shuffle INTEGER NOT NULL DEFAULT 0,
+                    repeat_mode TEXT NOT NULL DEFAULT 'off',
+                    volume REAL NOT NULL DEFAULT 0.85,
+                    is_muted INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL
+                );",
+                [],
+            )
+            .map_err(|e| format!("Migration 6 failed to create playback_state table: {}", e))?;
+
+            conn.execute(
+                "INSERT OR IGNORE INTO playback_state (
+                    id, current_track_id, current_position, queue_track_ids,
+                    queue_index, shuffle, repeat_mode, volume, is_muted, updated_at
+                ) VALUES (1, NULL, 0.0, '[]', 0, 0, 'off', 0.85, 0, 0);",
+                [],
+            )
+            .map_err(|e| format!("Migration 6 failed to initialize default playback_state: {}", e))?;
+
+            conn.execute(
+                "INSERT INTO _migrations (version, applied_at) VALUES (6, datetime('now'));",
+                [],
+            )
+            .map_err(|e| format!("Failed to record Migration 6: {}", e))?;
         }
 
         Ok(())
@@ -1337,6 +1393,89 @@ impl DatabaseManager {
             artwork_cache_size_bytes,
         })
     }
+
+    // ==========================================
+    // PHASE 9: PLAYBACK STATE PERSISTENCE
+    // ==========================================
+
+    pub fn get_playback_state(&self) -> Result<DbPlaybackState, String> {
+        let conn = self.get_connection()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT current_track_id, current_position, queue_track_ids, queue_index,
+                        shuffle, repeat_mode, volume, is_muted
+                 FROM playback_state WHERE id = 1",
+            )
+            .map_err(|e| format!("Failed to prepare get_playback_state: {}", e))?;
+
+        let state = stmt
+            .query_row([], |row| {
+                let queue_json: String = row.get(2)?;
+                let queue_track_ids: Vec<String> = serde_json::from_str(&queue_json).unwrap_or_default();
+                Ok(DbPlaybackState {
+                    current_track_id: row.get(0)?,
+                    current_position: row.get(1)?,
+                    queue_track_ids,
+                    queue_index: row.get(3)?,
+                    shuffle: row.get::<_, i64>(4)? == 1,
+                    repeat_mode: row.get(5)?,
+                    volume: row.get(6)?,
+                    is_muted: row.get::<_, i64>(7)? == 1,
+                })
+            })
+            .optional()
+            .map_err(|e| format!("Query playback_state error: {}", e))?
+            .unwrap_or(DbPlaybackState {
+                current_track_id: None,
+                current_position: 0.0,
+                queue_track_ids: Vec::new(),
+                queue_index: 0,
+                shuffle: false,
+                repeat_mode: "off".to_string(),
+                volume: 0.85,
+                is_muted: false,
+            });
+
+        Ok(state)
+    }
+
+    pub fn save_playback_state(&self, state: DbPlaybackState) -> Result<(), String> {
+        let conn = self.get_connection()?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        let queue_json = serde_json::to_string(&state.queue_track_ids).unwrap_or_else(|_| "[]".to_string());
+
+        conn.execute(
+            "UPDATE playback_state SET
+                current_track_id = ?1,
+                current_position = ?2,
+                queue_track_ids = ?3,
+                queue_index = ?4,
+                shuffle = ?5,
+                repeat_mode = ?6,
+                volume = ?7,
+                is_muted = ?8,
+                updated_at = ?9
+             WHERE id = 1;",
+            params![
+                state.current_track_id,
+                state.current_position,
+                queue_json,
+                state.queue_index,
+                if state.shuffle { 1 } else { 0 },
+                state.repeat_mode,
+                state.volume,
+                if state.is_muted { 1 } else { 0 },
+                now
+            ],
+        )
+        .map_err(|e| format!("Failed to save playback_state: {}", e))?;
+
+        Ok(())
+    }
 }
 
 fn fastrand_u32() -> u32 {
@@ -1731,6 +1870,48 @@ mod tests {
         assert_eq!(stats.playlist_count, 0);
         assert_eq!(stats.custom_mood_count, 0);
         assert!(stats.db_size_bytes > 0);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_playback_state_persistence_and_queue_restoration() {
+        let temp_dir = env::temp_dir().join(format!("aurora_test_playback_state_{}", fastrand_u32()));
+        let db = DatabaseManager::new(&temp_dir).expect("DatabaseManager init failed");
+
+        // 1. Initial state
+        let state = db.get_playback_state().unwrap();
+        assert_eq!(state.current_track_id, None);
+        assert_eq!(state.current_position, 0.0);
+        assert_eq!(state.queue_track_ids.len(), 0);
+        assert_eq!(state.shuffle, false);
+        assert_eq!(state.repeat_mode, "off");
+        assert_eq!(state.volume, 0.85);
+        assert_eq!(state.is_muted, false);
+
+        // 2. Save active playback state
+        let active = DbPlaybackState {
+            current_track_id: Some("track_123".to_string()),
+            current_position: 137.5,
+            queue_track_ids: vec!["track_123".to_string(), "track_456".to_string(), "track_789".to_string()],
+            queue_index: 0,
+            shuffle: true,
+            repeat_mode: "all".to_string(),
+            volume: 0.75,
+            is_muted: false,
+        };
+        db.save_playback_state(active).unwrap();
+
+        // 3. Retrieve and verify
+        let restored = db.get_playback_state().unwrap();
+        assert_eq!(restored.current_track_id.as_deref(), Some("track_123"));
+        assert_eq!(restored.current_position, 137.5);
+        assert_eq!(restored.queue_track_ids, vec!["track_123", "track_456", "track_789"]);
+        assert_eq!(restored.queue_index, 0);
+        assert_eq!(restored.shuffle, true);
+        assert_eq!(restored.repeat_mode, "all");
+        assert_eq!(restored.volume, 0.75);
+        assert_eq!(restored.is_muted, false);
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

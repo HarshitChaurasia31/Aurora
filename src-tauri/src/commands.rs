@@ -1,5 +1,6 @@
 use crate::db::{
-    DatabaseManager, DbAppSettings, DbCustomMood, DbPlaylist, DbPlaylistDetail, DbStorageStats, DbTrack, DbTrackInput,
+    DatabaseManager, DbAppSettings, DbCustomMood, DbPlaybackState, DbPlaylist, DbPlaylistDetail, DbStorageStats,
+    DbTrack, DbTrackInput,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -342,6 +343,20 @@ pub fn pick_music_folder() -> Result<Option<String>, String> {
         Some(path_buf) => Ok(Some(path_buf.to_string_lossy().to_string())),
         None => Ok(None),
     }
+}
+
+#[tauri::command]
+pub fn get_playback_state(app: AppHandle) -> Result<DbPlaybackState, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.get_playback_state()
+}
+
+#[tauri::command]
+pub fn save_playback_state(app: AppHandle, state: DbPlaybackState) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.save_playback_state(state)
 }
 
 fn simple_base64_encode(data: &[u8]) -> String {

@@ -35,3 +35,14 @@ export interface SongMetadata {
   readonly playCount?: number
   readonly isMissing?: boolean
 }
+
+export interface PlaybackState {
+  currentTrackId: string | null
+  currentPosition: number
+  queueTrackIds: string[]
+  queueIndex: number
+  shuffle: boolean
+  repeatMode: RepeatMode
+  volume: number
+  isMuted: boolean
+}

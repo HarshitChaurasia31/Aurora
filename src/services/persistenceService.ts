@@ -1,6 +1,6 @@
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core'
 import type { CustomMood } from '../types/ambient'
-import type { Track } from '../types/player'
+import type { PlaybackState, Track } from '../types/player'
 import type { Playlist, PlaylistDetail } from '../types/playlist'
 import type { AppSettings, StorageStats } from '../types/settings'
 
@@ -575,6 +575,31 @@ export const persistenceService = {
     } catch (err) {
       console.error('[PersistenceService] Failed to pick music folder:', err)
       return null
+    }
+  },
+
+  // ==========================================
+  // PHASE 9: PLAYBACK STATE PERSISTENCE
+  // ==========================================
+
+  getPlaybackState: async (): Promise<PlaybackState | null> => {
+    if (!isTauri()) return null
+    try {
+      return await invoke<PlaybackState>('get_playback_state')
+    } catch (err) {
+      console.error('[PersistenceService] Failed to get playback state:', err)
+      return null
+    }
+  },
+
+  savePlaybackState: async (state: PlaybackState): Promise<boolean> => {
+    if (!isTauri()) return false
+    try {
+      await invoke('save_playback_state', { state })
+      return true
+    } catch (err) {
+      console.error('[PersistenceService] Failed to save playback state:', err)
+      return false
     }
   },
 }

@@ -26,8 +26,10 @@ import { NowPlayingToast } from '../components/player/NowPlayingToast'
 import { QueueDrawer } from '../components/queue/QueueDrawer'
 import { useNavigationStore } from '../stores/navigationStore'
 import { usePlayerStore } from '../stores/playerStore'
+import { useGlobalKeyboardShortcuts } from '../hooks/useGlobalKeyboardShortcuts'
 
 export function AppShell() {
+  useGlobalKeyboardShortcuts()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [selectedAlbumFromSearch, setSelectedAlbumFromSearch] = useState<string | null>(null)
   const [selectedArtistFromSearch, setSelectedArtistFromSearch] = useState<string | null>(null)

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { audioEngine } from '../features/audio/audioEngine'
 import { persistenceService } from '../services/persistenceService'
-import type { RepeatMode, Track } from '../types/player'
+import type { PlaybackState, RepeatMode, Track } from '../types/player'
 
 export interface NowPlayingToastData {
   track: Track
@@ -20,6 +20,8 @@ interface PlayerStoreState {
   isMuted: boolean
   previousVolume: number
   shuffle: boolean
+  shuffledIndices: number[]
+  shuffledPointer: number
   repeatMode: RepeatMode
   searchQuery: string
   isInitialized: boolean
@@ -36,6 +38,8 @@ interface PlayerStoreState {
   pause: () => void
   next: () => void
   previous: () => void
+  skipForward: (seconds?: number) => void
+  skipBackward: (seconds?: number) => void
   seek: (seconds: number) => void
   setVolume: (volume: number) => void
   toggleMute: () => void
@@ -60,6 +64,25 @@ interface PlayerStoreState {
   setImportNotification: (notif: { message: string; timestamp: number } | null) => void
   setNowPlayingToast: (toast: NowPlayingToastData | null) => void
   triggerNowPlayingToast: (track: Track) => void
+  persistCurrentState: () => void
+}
+
+let lastPersistTime = 0
+const PERSIST_THROTTLE_MS = 5000
+
+function generateShuffledIndices(length: number, currentIndex: number): number[] {
+  const indices = Array.from({ length }, (_, i) => i).filter((i) => i !== currentIndex)
+  // Fisher-Yates shuffle
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const temp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = temp
+  }
+  if (currentIndex >= 0 && currentIndex < length) {
+    return [currentIndex, ...indices]
+  }
+  return indices
 }
 
 export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
@@ -74,6 +97,8 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
   isMuted: false,
   previousVolume: 0.85,
   shuffle: false,
+  shuffledIndices: [],
+  shuffledPointer: 0,
   repeatMode: 'off',
   searchQuery: '',
   isInitialized: false,
@@ -86,19 +111,99 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
     set({ isInitialized: true })
 
     try {
+      // 1. Load persisted library tracks
       const persistedTracks = await persistenceService.loadPersistedLibrary()
-      if (persistedTracks.length > 0) {
-        const playableTracks = persistedTracks.filter((t) => !t.isMissing)
-        const firstPlayable = playableTracks[0] || null
+      const playableTracks = persistedTracks.filter((t) => !t.isMissing)
 
-        set({
-          library: persistedTracks,
-          queue: playableTracks,
-          currentTrack: firstPlayable,
-          currentIndex: firstPlayable ? 0 : -1,
-          duration: firstPlayable?.duration || 0,
-        })
+      // 2. Load preferences & persisted playback state
+      const [settings, savedState] = await Promise.all([
+        persistenceService.getAppSettings(),
+        persistenceService.getPlaybackState(),
+      ])
+
+      let initialTrack: Track | null = null
+      let initialQueue: Track[] = playableTracks
+      let initialIndex = -1
+      let initialPosition = 0
+      let initialVolume = settings?.defaultVolume ?? 0.85
+      let initialMuted = false
+      let initialShuffle = false
+      let initialRepeat: RepeatMode = 'off'
+
+      if (savedState) {
+        initialVolume = savedState.volume ?? initialVolume
+        initialMuted = savedState.isMuted ?? false
+        initialShuffle = savedState.shuffle ?? false
+        initialRepeat = savedState.repeatMode ?? 'off'
+
+        // Reconstruct queue from saved track IDs if available
+        if (savedState.queueTrackIds && savedState.queueTrackIds.length > 0) {
+          const restoredQueue: Track[] = []
+          for (const qId of savedState.queueTrackIds) {
+            const found = persistedTracks.find((t) => t.id === qId && !t.isMissing)
+            if (found) {
+              restoredQueue.push(found)
+            }
+          }
+          if (restoredQueue.length > 0) {
+            initialQueue = restoredQueue
+          }
+        }
+
+        // Restore last active track if valid and non-missing
+        if (savedState.currentTrackId) {
+          const matchedTrack = persistedTracks.find(
+            (t) => t.id === savedState.currentTrackId && !t.isMissing,
+          )
+          if (matchedTrack) {
+            initialTrack = matchedTrack
+            initialIndex = initialQueue.findIndex((t) => t.id === matchedTrack.id)
+            if (initialIndex < 0) {
+              initialQueue = [matchedTrack, ...initialQueue]
+              initialIndex = 0
+            }
+
+            // Restore position if resumePlayerState is enabled or position was non-zero
+            if (settings?.resumePlayerState || savedState.currentPosition > 0) {
+              initialPosition = savedState.currentPosition || 0
+            }
+          }
+        }
       }
+
+      // Fallback if no last track was restored
+      if (!initialTrack && playableTracks.length > 0) {
+        initialTrack = playableTracks[0]
+        initialIndex = 0
+      }
+
+      // Setup audio engine initial state without autoplaying
+      audioEngine.setVolume(initialVolume)
+      audioEngine.setMuted(initialMuted)
+
+      if (initialTrack) {
+        audioEngine.loadAndPrepare(initialTrack, initialPosition)
+      }
+
+      const shuffledIdx = initialShuffle
+        ? generateShuffledIndices(initialQueue.length, initialIndex)
+        : []
+
+      set({
+        library: persistedTracks,
+        queue: initialQueue,
+        currentTrack: initialTrack,
+        currentIndex: initialIndex,
+        currentTime: initialPosition,
+        duration: initialTrack?.duration || 0,
+        volume: initialVolume,
+        isMuted: initialMuted,
+        previousVolume: initialVolume > 0 ? initialVolume : 0.85,
+        shuffle: initialShuffle,
+        shuffledIndices: shuffledIdx,
+        shuffledPointer: 0,
+        repeatMode: initialRepeat,
+      })
     } catch (err) {
       console.warn('[PlayerStore] Error during initializeLibrary:', err)
     }
@@ -120,7 +225,6 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       )
 
       if (existingIndex >= 0) {
-        // Reconcile moved/existing track in-place
         updatedLibrary[existingIndex] = {
           ...updatedLibrary[existingIndex],
           ...track,
@@ -136,7 +240,6 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       }
     }
 
-    // Update queue in-place, filtering out any missing tracks
     const updatedQueue = get()
       .queue.filter((q) => !q.isMissing)
       .map((q) => {
@@ -159,14 +262,12 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
           : q
       })
 
-    // Append any truly new non-missing tracks to queue
     for (const track of trulyNewTracks) {
       if (!track.isMissing && !updatedQueue.some((q) => q.id === track.id)) {
         updatedQueue.push(track)
       }
     }
 
-    // Update currentTrack if it was reconciled
     const currentTrack = get().currentTrack
     let updatedCurrentTrack = currentTrack
     if (currentTrack) {
@@ -189,7 +290,6 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       }
     }
 
-    // Feedback notification
     const addedCount = trulyNewTracks.length
     const reconciledCount = newTracks.length - addedCount
     let message = ''
@@ -230,6 +330,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
         currentIndex: 0,
         duration: firstTrack.duration || 0,
       })
+      audioEngine.loadAndPrepare(firstTrack, 0)
     }
   },
 
@@ -250,16 +351,22 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
         (t.fileHash && track.fileHash && t.fileHash === track.fileHash),
     )
 
+    const actualIndex = index >= 0 ? index : 0
+    const shuffledIdx = get().shuffle ? generateShuffledIndices(queue.length, actualIndex) : []
+
     set({
       currentTrack: track,
       queue,
-      currentIndex: index >= 0 ? index : 0,
+      currentIndex: actualIndex,
+      shuffledIndices: shuffledIdx,
+      shuffledPointer: 0,
       currentTime: 0,
       duration: track.duration || 0,
       isPlaying: true,
     })
 
-    audioEngine.loadAndPlay(track)
+    audioEngine.loadAndPlay(track, 0)
+    get().persistCurrentState()
   },
 
   togglePlay: () => {
@@ -275,9 +382,10 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
     if (isPlaying) {
       audioEngine.pause()
       set({ isPlaying: false })
+      get().persistCurrentState()
     } else {
       if (!audioEngine.hasSource() || audioEngine.getCurrentSrc() !== currentTrack.fileUrl) {
-        audioEngine.loadAndPlay(currentTrack)
+        audioEngine.loadAndPlay(currentTrack, get().currentTime)
       } else {
         audioEngine.play()
       }
@@ -289,7 +397,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
     const { currentTrack, library } = get()
     if (currentTrack && !currentTrack.isMissing) {
       if (!audioEngine.hasSource() || audioEngine.getCurrentSrc() !== currentTrack.fileUrl) {
-        audioEngine.loadAndPlay(currentTrack)
+        audioEngine.loadAndPlay(currentTrack, get().currentTime)
       } else {
         audioEngine.play()
       }
@@ -305,41 +413,81 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
   pause: () => {
     audioEngine.pause()
     set({ isPlaying: false })
+    get().persistCurrentState()
   },
 
   next: () => {
-    const { queue, currentIndex, shuffle, repeatMode } = get()
-    if (queue.length === 0) return
+    const { queue, currentIndex, shuffle, shuffledIndices, shuffledPointer, repeatMode } = get()
+    const playableQueue = queue.filter((t) => !t.isMissing)
+    if (playableQueue.length === 0) return
 
-    let nextIndex = currentIndex + 1
+    let nextTrack: Track | null = null
+    let nextIndex = -1
+    let nextShuffledPointer = shuffledPointer
 
-    if (shuffle && queue.length > 1) {
-      let randIndex = Math.floor(Math.random() * queue.length)
-      while (randIndex === currentIndex) {
-        randIndex = Math.floor(Math.random() * queue.length)
+    if (shuffle && playableQueue.length > 1) {
+      let pool = shuffledIndices
+      if (pool.length !== playableQueue.length) {
+        pool = generateShuffledIndices(playableQueue.length, currentIndex)
       }
-      nextIndex = randIndex
-    } else if (nextIndex >= queue.length) {
-      if (repeatMode === 'all') {
-        nextIndex = 0
+      const nextPtr = shuffledPointer + 1
+      if (nextPtr < pool.length) {
+        nextIndex = pool[nextPtr]
+        nextShuffledPointer = nextPtr
+        nextTrack = playableQueue[nextIndex]
       } else {
-        audioEngine.pause()
-        set({ isPlaying: false, currentTime: 0 })
-        return
+        // Shuffled pool reached end
+        if (repeatMode === 'all') {
+          const freshPool = generateShuffledIndices(playableQueue.length, -1)
+          nextIndex = freshPool[0]
+          nextShuffledPointer = 0
+          nextTrack = playableQueue[nextIndex]
+          set({ shuffledIndices: freshPool })
+        } else {
+          audioEngine.pause()
+          set({ isPlaying: false, currentTime: 0 })
+          get().persistCurrentState()
+          return
+        }
+      }
+    } else {
+      nextIndex = currentIndex + 1
+      if (nextIndex >= playableQueue.length) {
+        if (repeatMode === 'all') {
+          nextIndex = 0
+          nextTrack = playableQueue[0]
+        } else {
+          audioEngine.pause()
+          set({ isPlaying: false, currentTime: 0 })
+          get().persistCurrentState()
+          return
+        }
+      } else {
+        nextTrack = playableQueue[nextIndex]
       }
     }
 
-    const nextTrack = queue[nextIndex]
     if (nextTrack) {
-      get().playTrack(nextTrack, queue)
+      set({
+        currentTrack: nextTrack,
+        currentIndex: nextIndex,
+        shuffledPointer: nextShuffledPointer,
+        currentTime: 0,
+        duration: nextTrack.duration || 0,
+        isPlaying: true,
+      })
+      audioEngine.loadAndPlay(nextTrack, 0)
+      get().persistCurrentState()
     }
   },
 
   previous: () => {
-    const { queue, currentIndex, currentTime } = get()
-    if (queue.length === 0) return
+    const { queue, currentIndex, currentTime, repeatMode } = get()
+    const playableQueue = queue.filter((t) => !t.isMissing)
+    if (playableQueue.length === 0) return
 
-    if (currentTime > 3) {
+    // If more than 3 seconds into track, restart current track
+    if (currentTime > 3.0) {
       audioEngine.seek(0)
       set({ currentTime: 0 })
       return
@@ -347,18 +495,43 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
 
     let prevIndex = currentIndex - 1
     if (prevIndex < 0) {
-      prevIndex = queue.length - 1
+      if (repeatMode === 'all') {
+        prevIndex = playableQueue.length - 1
+      } else {
+        prevIndex = 0
+      }
     }
 
-    const prevTrack = queue[prevIndex]
+    const prevTrack = playableQueue[prevIndex]
     if (prevTrack) {
-      get().playTrack(prevTrack, queue)
+      set({
+        currentTrack: prevTrack,
+        currentIndex: prevIndex,
+        currentTime: 0,
+        duration: prevTrack.duration || 0,
+        isPlaying: true,
+      })
+      audioEngine.loadAndPlay(prevTrack, 0)
+      get().persistCurrentState()
     }
+  },
+
+  skipForward: (seconds = 10) => {
+    const newTime = audioEngine.skip(seconds)
+    set({ currentTime: newTime })
+    get().persistCurrentState()
+  },
+
+  skipBackward: (seconds = 10) => {
+    const newTime = audioEngine.skip(-seconds)
+    set({ currentTime: newTime })
+    get().persistCurrentState()
   },
 
   seek: (seconds: number) => {
     audioEngine.seek(seconds)
     set({ currentTime: seconds })
+    get().persistCurrentState()
   },
 
   setVolume: (newVolume: number) => {
@@ -369,6 +542,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       isMuted: clamped === 0,
       previousVolume: clamped > 0 ? clamped : get().previousVolume,
     })
+    get().persistCurrentState()
   },
 
   toggleMute: () => {
@@ -383,10 +557,23 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       audioEngine.setMuted(true)
       set({ isMuted: true, volume: 0, previousVolume: volume > 0 ? volume : 0.85 })
     }
+    get().persistCurrentState()
   },
 
   toggleShuffle: () => {
-    set((state) => ({ shuffle: !state.shuffle }))
+    set((state) => {
+      const nextShuffle = !state.shuffle
+      const cleanQueue = state.queue.filter((t) => !t.isMissing)
+      const shuffledIdx = nextShuffle
+        ? generateShuffledIndices(cleanQueue.length, state.currentIndex)
+        : []
+      return {
+        shuffle: nextShuffle,
+        shuffledIndices: shuffledIdx,
+        shuffledPointer: 0,
+      }
+    })
+    get().persistCurrentState()
   },
 
   toggleRepeat: () => {
@@ -395,6 +582,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
         state.repeatMode === 'off' ? 'all' : state.repeatMode === 'all' ? 'one' : 'off'
       return { repeatMode: nextMode }
     })
+    get().persistCurrentState()
   },
 
   toggleLike: (trackId?: string) => {
@@ -441,7 +629,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       })
     }
 
-    if (repeatMode === 'one' && currentTrack) {
+    if (repeatMode === 'one' && currentTrack && !currentTrack.isMissing) {
       audioEngine.seek(0)
       audioEngine.play()
       set({ currentTime: 0, isPlaying: true })
@@ -450,7 +638,16 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
     }
   },
 
-  setCurrentTime: (currentTime: number) => set({ currentTime }),
+  setCurrentTime: (currentTime: number) => {
+    set({ currentTime })
+    // Throttle playback position persistence
+    const now = Date.now()
+    if (now - lastPersistTime > PERSIST_THROTTLE_MS) {
+      lastPersistTime = now
+      get().persistCurrentState()
+    }
+  },
+
   setDuration: (duration: number) => set({ duration }),
   setIsPlaying: (isPlaying: boolean) => set({ isPlaying }),
   setSearchQuery: (searchQuery: string) => set({ searchQuery }),
@@ -468,6 +665,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       const updated = [...cleanQueue, track]
       return { queue: updated }
     })
+    get().persistCurrentState()
   },
 
   playNext: (track: Track) => {
@@ -482,6 +680,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       const updated = [...cleanQueue.slice(0, insertAt), track, ...cleanQueue.slice(insertAt)]
       return { queue: updated }
     })
+    get().persistCurrentState()
   },
 
   removeFromQueue: (index: number) => {
@@ -497,6 +696,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       }
       return { queue: updated, currentIndex: newIndex }
     })
+    get().persistCurrentState()
   },
 
   moveQueueItem: (fromIndex: number, toIndex: number) => {
@@ -521,6 +721,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
       }
       return { queue: updated, currentIndex: newIndex }
     })
+    get().persistCurrentState()
   },
 
   clearQueue: () => {
@@ -529,6 +730,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
         state.currentTrack && !state.currentTrack.isMissing ? [state.currentTrack] : []
       return { queue: updated, currentIndex: updated.length > 0 ? 0 : -1 }
     })
+    get().persistCurrentState()
   },
 
   playAlbum: (_albumName: string, tracks: Track[], startIndex = 0) => {
@@ -562,7 +764,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
         updatedCurrentTrack = nextTrack
         newIndex = 0
         if (isPlaying) {
-          audioEngine.loadAndPlay(nextTrack)
+          audioEngine.loadAndPlay(nextTrack, 0)
         }
       } else {
         audioEngine.pause()
@@ -586,6 +788,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
     })
 
     await persistenceService.removeTrack(trackId)
+    get().persistCurrentState()
   },
 
   setImportNotification: (notif) => set({ importNotification: notif }),
@@ -595,7 +798,6 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
   triggerNowPlayingToast: (track: Track) => {
     if (track.isMissing) return
     const currentToast = get().nowPlayingToast
-    // If same track was toasted within the last 2.5s, don't duplicate
     if (
       currentToast &&
       currentToast.track.id === track.id &&
@@ -608,6 +810,26 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
         track,
         timestamp: Date.now(),
       },
+    })
+  },
+
+  persistCurrentState: () => {
+    const { currentTrack, currentTime, queue, currentIndex, shuffle, repeatMode, volume, isMuted } =
+      get()
+
+    const playbackState: PlaybackState = {
+      currentTrackId: currentTrack && !currentTrack.isMissing ? currentTrack.id : null,
+      currentPosition: Math.max(0, currentTime),
+      queueTrackIds: queue.filter((t) => !t.isMissing).map((t) => t.id),
+      queueIndex: Math.max(0, currentIndex),
+      shuffle,
+      repeatMode,
+      volume,
+      isMuted,
+    }
+
+    persistenceService.savePlaybackState(playbackState).catch((err) => {
+      console.warn('[PlayerStore] Error saving playback state:', err)
     })
   },
 }))
@@ -627,3 +849,10 @@ audioEngine.registerCallbacks({
     }
   },
 })
+
+// Listen to beforeunload for final shutdown persistence
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    usePlayerStore.getState().persistCurrentState()
+  })
+}

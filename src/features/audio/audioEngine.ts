@@ -60,15 +60,24 @@ class AudioEngine {
     this.onPlayStateChangeCallback = callbacks.onPlayStateChange
   }
 
-  public async loadAndPlay(track: Track): Promise<void> {
+  public async loadAndPlay(track: Track, initialPosition = 0): Promise<void> {
     try {
       this.audio.src = track.fileUrl
-      this.audio.currentTime = 0
+      this.audio.currentTime = initialPosition
       await this.audio.play()
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== 'AbortError') {
         console.warn('[AudioEngine] Failed to play track:', track.title, err)
       }
+    }
+  }
+
+  public loadAndPrepare(track: Track, initialPosition = 0): void {
+    try {
+      this.audio.src = track.fileUrl
+      this.audio.currentTime = initialPosition
+    } catch (err: unknown) {
+      console.warn('[AudioEngine] Failed to prepare track:', track.title, err)
     }
   }
 
@@ -96,9 +105,17 @@ class AudioEngine {
   }
 
   public seek(seconds: number): void {
-    if (Number.isFinite(seconds) && this.audio.duration) {
-      this.audio.currentTime = Math.max(0, Math.min(seconds, this.audio.duration))
-    }
+    if (!Number.isFinite(seconds)) return
+    const maxDur = Number.isFinite(this.audio.duration) && this.audio.duration > 0 ? this.audio.duration : Infinity
+    this.audio.currentTime = Math.max(0, Math.min(seconds, maxDur))
+  }
+
+  public skip(deltaSeconds: number): number {
+    const current = this.audio.currentTime || 0
+    const maxDur = Number.isFinite(this.audio.duration) && this.audio.duration > 0 ? this.audio.duration : Infinity
+    const newTime = Math.max(0, Math.min(current + deltaSeconds, maxDur))
+    this.audio.currentTime = newTime
+    return newTime
   }
 
   public setVolume(volume: number): void {

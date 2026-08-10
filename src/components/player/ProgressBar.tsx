@@ -11,23 +11,24 @@ export function ProgressBar() {
   const [dragTime, setDragTime] = useState(0)
   const barRef = useRef<HTMLDivElement | null>(null)
 
-  const activeTime = isDragging ? dragTime : currentTime
+  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0
+  const activeTime = isDragging ? dragTime : Number.isFinite(currentTime) ? currentTime : 0
   const progressPercent =
-    duration > 0 ? Math.min(100, Math.max(0, (activeTime / duration) * 100)) : 0
+    safeDuration > 0 ? Math.min(100, Math.max(0, (activeTime / safeDuration) * 100)) : 0
 
   const calculateTimeFromEvent = useCallback(
     (clientX: number): number => {
       const rect = barRef.current?.getBoundingClientRect()
-      if (!rect || duration <= 0) return 0
+      if (!rect || safeDuration <= 0) return 0
       const offsetX = Math.max(0, Math.min(clientX - rect.left, rect.width))
       const ratio = offsetX / rect.width
-      return ratio * duration
+      return ratio * safeDuration
     },
-    [duration],
+    [safeDuration],
   )
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (duration <= 0) return
+    if (safeDuration <= 0) return
     setIsDragging(true)
     const newTime = calculateTimeFromEvent(e.clientX)
     setDragTime(newTime)
@@ -58,16 +59,16 @@ export function ProgressBar() {
         role="slider"
         aria-label="Seek timeline"
         aria-valuemin={0}
-        aria-valuemax={duration || 100}
+        aria-valuemax={safeDuration || 100}
         aria-valuenow={activeTime}
-        aria-valuetext={`${formatTime(activeTime)} of ${formatTime(duration)}`}
+        aria-valuetext={`${formatTime(activeTime)} of ${formatTime(safeDuration)}`}
         tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onKeyDown={(e) => {
-          if (e.key === 'ArrowRight') seek(Math.min(duration, currentTime + 5))
-          if (e.key === 'ArrowLeft') seek(Math.max(0, currentTime - 5))
+          if (e.key === 'ArrowRight') seek(Math.min(safeDuration, activeTime + 5))
+          if (e.key === 'ArrowLeft') seek(Math.max(0, activeTime - 5))
         }}
         className="group relative flex h-6 flex-1 cursor-pointer items-center py-2 touch-none focus-visible:outline-none"
       >
@@ -88,7 +89,7 @@ export function ProgressBar() {
       </div>
 
       <span className="w-10 text-left font-medium tracking-tight text-white/40">
-        {formatTime(duration)}
+        {formatTime(safeDuration)}
       </span>
     </div>
   )

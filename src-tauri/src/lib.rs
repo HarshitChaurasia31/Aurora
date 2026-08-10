@@ -36,7 +36,9 @@ pub fn run() {
             update_app_settings,
             reset_app_settings,
             get_storage_stats,
-            pick_music_folder
+            pick_music_folder,
+            get_playback_state,
+            save_playback_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running Aurora");
