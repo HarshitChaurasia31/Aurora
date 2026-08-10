@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Home, Maximize2, Minimize2, PanelLeftOpen } from 'lucide-react'
 import { Sidebar } from '../components/sidebar/Sidebar'
 import { AmbientBackground } from '../components/ambient/AmbientBackground'
-import { AmbientDevSwitcher } from '../components/ambient/AmbientDevSwitcher'
+import { AmbientMoodSelector } from '../components/ambient/AmbientMoodSelector'
 import { AlbumArtwork } from '../components/player/AlbumArtwork'
 import { GlassPlayer } from '../components/player/GlassPlayer'
 import { LibraryView } from '../components/library/LibraryView'
@@ -41,6 +41,7 @@ export function AppShell() {
 
   const isFullscreen = useFullscreenStore((state) => state.isFullscreen)
   const toggleFullscreen = useFullscreenStore((state) => state.toggleFullscreen)
+  const setFullscreen = useFullscreenStore((state) => state.setFullscreen)
   const checkFullscreen = useFullscreenStore((state) => state.checkFullscreen)
 
   useEffect(() => {
@@ -135,8 +136,38 @@ export function AppShell() {
           )}
         </button>
 
+        {/* Fullscreen Floating Exit Pill */}
+        <AnimatePresence>
+          {isFullscreen ? (
+            <motion.div
+              key="fullscreen-exit-pill"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="absolute top-5 right-5 z-30 flex items-center gap-2"
+            >
+              <button
+                type="button"
+                onClick={() => setFullscreen(false)}
+                aria-label="Exit fullscreen"
+                title="Exit fullscreen (Esc / F11)"
+                className="flex items-center gap-1.5 rounded-full border border-white/15 bg-[#121424]/80 px-3.5 py-1.5 text-xs font-medium text-white/80 shadow-2xl backdrop-blur-xl transition-colors hover:border-white/30 hover:bg-white/10 hover:text-white"
+              >
+                <Minimize2 className="size-3.5" />
+                <span>Exit Fullscreen</span>
+                <span className="font-mono text-[10px] text-white/40 ml-1">ESC</span>
+              </button>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
         {/* Primary View Routing */}
-        <div className="relative z-10 flex size-full flex-col overflow-hidden">
+        <div
+          className={`relative z-10 flex size-full flex-col overflow-hidden ${
+            !isSidebarOpen && activeTab !== 'Home' ? 'pt-20 sm:pt-20' : ''
+          }`}
+        >
           {activeTab === 'Library' ? (
             <LibraryView />
           ) : activeTab === 'Search' ? (
@@ -178,8 +209,8 @@ export function AppShell() {
         {/* Playback Queue Drawer Overlay */}
         <QueueDrawer />
 
-        {/* Ambient Mood Switcher (import.meta.env.DEV only, hidden in fullscreen) */}
-        {!isFullscreen ? <AmbientDevSwitcher /> : null}
+        {/* Ambient Mood Selector on Home Screen (available in both Dev & Production, hidden in fullscreen) */}
+        {!isFullscreen && activeTab === 'Home' ? <AmbientMoodSelector /> : null}
 
         {/* Playlist Modals */}
         <CreatePlaylistModal />

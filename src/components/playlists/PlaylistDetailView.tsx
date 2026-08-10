@@ -70,7 +70,7 @@ export const PlaylistDetailView = memo(function PlaylistDetailView({
   }
 
   return (
-    <div className="relative z-10 flex size-full max-w-5xl flex-col overflow-hidden px-6 py-6 select-none">
+    <div className="relative z-10 mx-auto flex size-full max-w-5xl flex-col overflow-hidden px-6 py-6 select-none">
       {/* Top Bar: Back navigation */}
       <div className="flex items-center gap-3 shrink-0 mb-5">
         <button

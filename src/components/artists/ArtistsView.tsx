@@ -77,7 +77,7 @@ export function ArtistsView({ initialArtist, onClearInitialArtist, onSelectAlbum
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="relative z-10 flex size-full max-w-5xl flex-col px-6 py-8 select-none"
+      className="relative z-10 mx-auto flex size-full max-w-5xl flex-col px-6 py-8 select-none"
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/[0.08] pb-6 shrink-0">

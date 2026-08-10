@@ -66,7 +66,7 @@ export function ArtistDetailView({ artistName, onBack, onSelectAlbum }: ArtistDe
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-      className="relative z-10 flex size-full max-w-5xl flex-col px-6 py-8 select-none"
+      className="relative z-10 mx-auto flex size-full max-w-5xl flex-col px-6 py-8 select-none"
     >
       {/* Back Button */}
       <div className="flex items-center gap-3 shrink-0 mb-5">

@@ -46,7 +46,7 @@ export function PlaylistsView() {
   }
 
   return (
-    <div className="relative z-10 flex size-full flex-col overflow-hidden px-6 py-5">
+    <div className="relative z-10 mx-auto flex size-full max-w-5xl flex-col overflow-hidden px-6 py-5 select-none">
       {/* Header */}
       <div className="flex items-center justify-between shrink-0 mb-6">
         <div className="flex items-center gap-3">

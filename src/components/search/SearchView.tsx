@@ -111,7 +111,7 @@ export function SearchView({ onSelectAlbum, onSelectArtist }: SearchViewProps) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="relative z-10 flex size-full max-w-5xl flex-col px-6 py-8 select-none"
+      className="relative z-10 mx-auto flex size-full max-w-5xl flex-col px-6 py-8 select-none"
     >
       {/* Search Input Hero */}
       <div className="relative flex items-center w-full max-w-2xl shrink-0">
