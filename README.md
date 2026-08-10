@@ -1,161 +1,119 @@
-Aurora
+<div align="center">
 
-<p align="center">
+# 🎧 Aurora
 
-<strong>{=html}Aurora</strong>{=html} --- a local-first desktopmusic player with immersive ambient moods.
+**A local-first desktop music player with immersive ambient moods.**
 
-</p>
+*Your music. Your library. Your files. No cloud music service required.*
 
-<p align="center">
+[![Download Aurora](https://img.shields.io/badge/⬇️_Download-Aurora_v1.0.0_for_Windows-8A2BE2?style=for-the-badge)](https://github.com/HarshitChaurasia31/Aurora/releases/latest/download/Aurora_1.0.0_x64-setup.exe)
 
-Your music. Your library. Your files. No cloud music service required.
+**Windows x64 installer:** `Aurora_1.0.0_x64-setup.exe`
 
-</p>
+> ⚠️ Download Aurora only from the [official GitHub Releases page](https://github.com/HarshitChaurasia31/Aurora/releases) or the button above.
 
-⬇️ Download Aurora
+</div>
 
-<p align="center">
+---
 
-<a href="../../releases/latest/download/Aurora_1.0.0_x64-setup.exe">{=html}<strong>{=html}🟣 Download Aurora v1.0.0 for Windows</strong>{=html}</a>{=html}
+## ✨ Features
 
-</p>
+| | |
+|---|---|
+| 🎵 Local music library | 💾 Persistent SQLite library |
+| 🖼️ Album artwork & metadata | ❤️ Liked songs |
+| 🔎 Search songs, albums, artists, playlists | 💿 Album & artist browsing |
+| 📋 Persistent playlists | 🔄 Playback queue |
+| 📁 Missing & moved-file handling | 🌧️ Ambient moods |
+| 🎥 Custom ambient videos | 🔁 Loopable ambient backgrounds |
+| 🎚️ Crossfade playback | 🖥️ Fullscreen & F11 immersive mode |
+| 🏠 Clean, glass-based Aurora interface | 🔒 Local-first data ownership |
 
-Windows x64 installer: Aurora_1.0.0_x64-setup.exe
+---
 
-Download Aurora only from the official GitHub Releases page or thedownload button above.
+## 🎧 Local-First by Design
 
-✨ Features
+Aurora is built around **your** local music collection:
 
-🎵 Local music library
+- Your audio files stay on your own filesystem.
+- Aurora stores library information and application data locally — no cloud music account required.
+- Playlists reference your existing library tracks instead of duplicating audio files.
 
-💾 Persistent SQLite library
+---
 
-🖼️ Album artwork and metadata
+## 🌌 Ambient Moods
 
-❤️ Liked songs
+Aurora includes built-in ambient backgrounds:
 
-🔎 Search across songs, albums, artists, and playlists
-
-💿 Album and artist browsing
-
-📋 Persistent playlists
-
-🔄 Playback queue
-
-📁 Missing and moved-file handling
-
-🌧️ Ambient moods
-
-🎥 Custom ambient videos
-
-🔁 Loopable ambient backgrounds
-
-🎚️ Crossfade playback
-
-🖥️ Fullscreen and F11 immersive mode
-
-🏠 Clean, glass-based Aurora interface
-
-🔒 Local-first data ownership
-
-🎧 Local-First by Design
-
-Aurora is designed around your local music collection.
-
-Your audio files stay on your own filesystem. Aurora stores libraryinformation and application data locally rather than requiring a cloudmusic account.
-
-Playlists reference your existing library tracks instead of duplicatingaudio files.
-
-🌌 Ambient Moods
-
-Aurora includes built-in ambient backgrounds such as:
-
-Rain
-
-Mountain
-
-Night
-
-Forest
-
-Ocean
-
-Snow
-
-City
-
-Fireplace
+`Rain` · `Mountain` · `Night` · `Forest` · `Ocean` · `Snow` · `City` · `Fireplace`
 
 You can also add your own local videos as custom ambient moods.
 
-📋 Playlists
+---
 
-Create personal playlists without duplicating your music files.
+## 📋 Playlists
 
-Playlist data references the existing local library tracks, so removinga playlist does not delete your music files.
+Create personal playlists without duplicating your music files. Playlist data references existing local library tracks, so deleting a playlist never deletes your music.
 
-🛡️ Safety & Verification
+---
+
+## 🛡️ Safety & Verification
 
 Aurora v1.0.0 is distributed through this GitHub repository.
 
-For the safest download:
+**For the safest download:**
+1. Download Aurora only from the [official GitHub Releases page](https://github.com/HarshitChaurasia31/Aurora/releases).
+2. Confirm the installer is named exactly `Aurora_1.0.0_x64-setup.exe`.
+3. Avoid installers shared through unofficial file-hosting sites.
 
-Download Aurora from the official GitHub Releases page.
+> If Windows SmartScreen shows an "unrecognized app" warning, that's expected — Aurora is a new app and hasn't yet built up reputation with Microsoft's SmartScreen service.
 
-Make sure the installer is named Aurora_1.0.0_x64-setup.exe.
+**Verify the installer checksum (PowerShell):**
 
-Avoid installers shared through unofficial file-hosting websites.
-
-If Windows SmartScreen displays an "unrecognized app" warning,remember that Aurora is a new Windows application and may not yethave established reputation with Microsoft's SmartScreen service.
-
-Verify the installer
-
-You can independently calculate the SHA-256 checksum of the downloadedinstaller with PowerShell:
-
+```powershell
 Get-FileHash .\Aurora_1.0.0_x64-setup.exe -Algorithm SHA256
+```
 
-Compare the result with the SHA-256 value published in the correspondingGitHub Release.
+Compare the result against the SHA-256 value published on the corresponding [GitHub Release](https://github.com/HarshitChaurasia31/Aurora/releases).
 
-💻 System
+---
 
-Supported platform
+## 💻 System Requirements
 
-Windows 10/11
+- **OS:** Windows 10 / 11
+- **Architecture:** 64-bit (x64)
+- **Format:** NSIS installer
 
-64-bit (x64)
+---
 
-Aurora v1.0.0 is currently distributed as a Windows NSIS installer.
+## 🚀 Installation
 
-🚀 Installation
+1. Download `Aurora_1.0.0_x64-setup.exe`.
+2. Run the installer.
+3. Follow the installation steps.
+4. Launch Aurora.
+5. Add your local music folder.
+6. Start listening.
 
-Download Aurora_1.0.0_x64-setup.exe.
+> Your music files are **not** copied into Aurora's installation directory.
 
-Run the installer.
+---
 
-Follow the installation steps.
+## 🗂️ Data & Privacy
 
-Launch Aurora.
+Aurora is local-first:
 
-Add your local music folder.
+- Your music stays on your own computer — no cloud account required to manage your library.
+- Application data is stored in your local app-data directory.
 
-Start listening.
+---
 
-Your music files are not copied into Aurora's installation directory.
+## 🧪 Release
 
-🗂️ Data & Privacy
+**Aurora v1.0.0** — first public release.
 
-Aurora is local-first.
+---
 
-Your music remains on your own computer, and Aurora does not require acloud music account to manage your local library.
+## 📜 License
 
-Application data is stored in the user's local application-datadirectory.
-
-🧪 Release
-
-Aurora v1.0.0
-
-This is the first public release of Aurora.
-
-📜 License
-
-See the repository's license file for the terms under which Aurora isdistributed.
+See the repository's [license file](https://github.com/HarshitChaurasia31/Aurora/blob/main/LICENSE) for the terms under which Aurora is distributed.
