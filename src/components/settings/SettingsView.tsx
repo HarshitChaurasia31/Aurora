@@ -433,7 +433,7 @@ export function SettingsView() {
 
           <div className="text-xs text-white/60 space-y-1.5 pt-1">
             <p className="text-sm font-medium text-white/95">Aurora Desktop Music Player</p>
-            <p>Version 0.1.0 • Tauri 2.0 + SQLite + React</p>
+            <p>Version 1.0.0 • Tauri 2.0 + SQLite + React</p>
             <p className="text-white/40">
               A cinematic local-first audio experience featuring ambient video backgrounds, embedded artwork caching, and SQLite metadata persistence.
             </p>
