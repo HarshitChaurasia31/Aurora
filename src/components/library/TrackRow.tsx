@@ -1,6 +1,7 @@
-import { Disc3, Heart, ListPlus, Play, Trash2, Volume2 } from 'lucide-react'
+import { Disc3, Heart, ListMusic, ListPlus, Play, Trash2, Volume2 } from 'lucide-react'
 import { memo, useState } from 'react'
 import { usePlayerStore } from '../../stores/playerStore'
+import { usePlaylistStore } from '../../stores/playlistStore'
 import { formatTime } from '../../utils/formatTime'
 import type { Track } from '../../types/player'
 
@@ -25,6 +26,7 @@ export const TrackRow = memo(function TrackRow({
   const toggleLike = usePlayerStore((state) => state.toggleLike)
   const addToQueue = usePlayerStore((state) => state.addToQueue)
   const removeTrack = usePlayerStore((state) => state.removeTrack)
+  const openAddToPlaylistModal = usePlaylistStore((state) => state.openAddToPlaylistModal)
   const [failedUrl, setFailedUrl] = useState(false)
 
   const isSelected = currentTrack?.id === track.id
@@ -51,6 +53,11 @@ export const TrackRow = memo(function TrackRow({
   const handleQueueClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     addToQueue(track)
+  }
+
+  const handleAddToPlaylistClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    openAddToPlaylistModal(track)
   }
 
   const handleRemoveClick = (e: React.MouseEvent) => {
@@ -134,11 +141,11 @@ export const TrackRow = memo(function TrackRow({
         </div>
       ) : null}
 
-      {/* Col 4: Like Button + Format / Missing Badge + Duration + Queue Action + Remove from Library */}
+      {/* Col 4: Like Button + Add to Playlist + Queue Action + Remove from Library + Duration */}
       <div
         className={`${
           showAlbum ? 'col-span-5 sm:col-span-2' : 'col-span-3 sm:col-span-3'
-        } flex items-center justify-end gap-1.5 pr-1 font-mono text-[11px]`}
+        } flex items-center justify-end gap-1 pr-1 font-mono text-[11px]`}
       >
         {/* Like Button */}
         {!isMissing ? (
@@ -153,6 +160,19 @@ export const TrackRow = memo(function TrackRow({
             }`}
           >
             <Heart className={`size-3.5 ${track.liked ? 'fill-rose-400' : ''}`} strokeWidth={1.8} />
+          </button>
+        ) : null}
+
+        {/* Add to Playlist Button (Hover) */}
+        {!isMissing ? (
+          <button
+            type="button"
+            onClick={handleAddToPlaylistClick}
+            aria-label="Add to Playlist"
+            title="Add to Playlist"
+            className="hidden group-hover:grid size-7 place-items-center rounded-lg text-white/40 hover:bg-white/[0.08] hover:text-violet-200 transition-colors"
+          >
+            <ListMusic className="size-3.5" strokeWidth={1.8} />
           </button>
         ) : null}
 
@@ -186,7 +206,7 @@ export const TrackRow = memo(function TrackRow({
             Missing
           </span>
         ) : (
-          <span className="text-white/40">{formatTime(track.duration)}</span>
+          <span className="text-white/40 ml-1">{formatTime(track.duration)}</span>
         )}
       </div>
     </div>

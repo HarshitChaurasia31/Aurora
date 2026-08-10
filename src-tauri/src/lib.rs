@@ -17,7 +17,15 @@ pub fn run() {
             pick_audio_file,
             pick_audio_folder,
             read_file_bytes,
-            delete_track
+            delete_track,
+            create_playlist,
+            get_all_playlists,
+            get_playlist_detail,
+            rename_playlist,
+            delete_playlist,
+            add_track_to_playlist,
+            remove_track_from_playlist,
+            reorder_playlist_tracks
         ])
         .run(tauri::generate_context!())
         .expect("error while running Aurora");

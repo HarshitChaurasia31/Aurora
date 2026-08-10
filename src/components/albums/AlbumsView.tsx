@@ -1,7 +1,8 @@
 import { Disc3, Play } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { usePlayerStore } from '../../stores/playerStore'
+import { ScrollToTopButton } from '../common/ScrollToTopButton'
 import { AlbumDetailView } from './AlbumDetailView'
 import type { Track } from '../../types/player'
 
@@ -21,6 +22,8 @@ export function AlbumsView({ initialAlbum, onClearInitialAlbum }: AlbumsViewProp
   const library = usePlayerStore((state) => state.library)
   const playAlbum = usePlayerStore((state) => state.playAlbum)
   const [selectedAlbum, setSelectedAlbum] = useState<string | null>(initialAlbum || null)
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // Derive normalized album groups
   const albums = useMemo(() => {
@@ -66,7 +69,7 @@ export function AlbumsView({ initialAlbum, onClearInitialAlbum }: AlbumsViewProp
       className="relative z-10 flex size-full max-w-5xl flex-col px-6 py-8 select-none"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/[0.08] pb-6">
+      <div className="flex items-center justify-between border-b border-white/[0.08] pb-6 shrink-0">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-medium tracking-tight text-white/90">Albums</h1>
@@ -79,7 +82,11 @@ export function AlbumsView({ initialAlbum, onClearInitialAlbum }: AlbumsViewProp
       </div>
 
       {/* Grid Content */}
-      <div className="mt-6 flex-1 overflow-y-auto pr-1">
+      <div
+        ref={scrollRef}
+        onScroll={(e) => setShowScrollTop(e.currentTarget.scrollTop > 220)}
+        className="mt-6 flex-1 overflow-y-auto pr-1"
+      >
         {albums.length === 0 ? (
           <div className="flex min-h-[340px] flex-col items-center justify-center rounded-2xl border border-white/[0.05] bg-[#0c0e18]/30 p-8 text-center backdrop-blur-xl">
             <div className="grid size-14 place-items-center rounded-2xl border border-white/10 bg-violet-400/[0.08] text-violet-300">
@@ -145,6 +152,12 @@ export function AlbumsView({ initialAlbum, onClearInitialAlbum }: AlbumsViewProp
           </div>
         )}
       </div>
+
+      {/* Floating Scroll to Top button */}
+      <ScrollToTopButton
+        visible={showScrollTop}
+        onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+      />
     </motion.div>
   )
 }

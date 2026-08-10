@@ -1,9 +1,10 @@
 import { ArrowUpDown, Clock, FolderPlus, Music, Search, Sparkles } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { importAudioFolder, importSingleAudioFile } from '../../features/importer/fileImporter'
 import { usePlayerStore } from '../../stores/playerStore'
 import { formatTime } from '../../utils/formatTime'
+import { ScrollToTopButton } from '../common/ScrollToTopButton'
 import { AddMusicButton } from './AddMusicButton'
 import { TrackRow } from './TrackRow'
 import type { Track } from '../../types/player'
@@ -21,6 +22,8 @@ export function LibraryView() {
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
   const [sortKey, setSortKey] = useState<SortKey>('dateAdded')
   const [sortAsc, setSortAsc] = useState(false)
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // Counts
   const likedCount = useMemo(() => library.filter((t) => t.liked).length, [library])
@@ -81,7 +84,26 @@ export function LibraryView() {
   }, [library, activeFilter, searchQuery, sortKey, sortAsc])
 
   const handleTrackClick = (track: Track) => {
-    playTrack(track, processedTracks.length > 0 ? processedTracks : library)
+    // Exclude missing tracks from the playable queue
+    const playableQueue = processedTracks.filter((t) => !t.isMissing)
+    playTrack(track, playableQueue)
+  }
+
+  const handleSortClick = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortAsc(!sortAsc)
+    } else {
+      setSortKey(key)
+      setSortAsc(true)
+    }
+  }
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    setShowScrollTop(e.currentTarget.scrollTop > 220)
+  }
+
+  const scrollToTop = () => {
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   return (
@@ -89,160 +111,201 @@ export function LibraryView() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="relative z-10 flex size-full max-w-5xl flex-col px-6 py-8 select-none"
+      className="relative z-10 flex size-full max-w-6xl flex-col px-6 py-6 select-none"
     >
-      {/* Toast Notification on Import */}
+      {/* Toast Feedback Notification */}
       <AnimatePresence>
         {importNotification ? (
           <motion.div
-            initial={{ opacity: 0, y: -16, scale: 0.95 }}
+            initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -16, scale: 0.95 }}
-            transition={{ duration: 0.25 }}
-            className="fixed top-6 right-8 z-50 flex items-center gap-2.5 rounded-2xl border border-violet-400/30 bg-[#121324]/90 px-4 py-2.5 text-xs text-violet-200 shadow-[0_12px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="absolute top-4 right-6 z-30 flex items-center gap-2 rounded-xl border border-violet-400/30 bg-[#121324]/90 px-3.5 py-2 text-xs font-medium text-violet-200 shadow-xl backdrop-blur-xl"
           >
-            <Sparkles className="size-4 text-violet-300" />
+            <Sparkles className="size-3.5 text-violet-300 animate-pulse" />
             <span>{importNotification.message}</span>
             <button
               type="button"
               onClick={() => setImportNotification(null)}
               className="ml-2 text-white/40 hover:text-white"
             >
-              ✕
+              ×
             </button>
           </motion.div>
         ) : null}
       </AnimatePresence>
 
-      {/* Header */}
-      <div className="flex flex-col gap-4 border-b border-white/[0.08] pb-6 sm:flex-row sm:items-center sm:justify-between">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-5 shrink-0">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-medium tracking-tight text-white/90">Music Library</h1>
-            <span className="rounded-full bg-violet-400/[0.12] border border-violet-400/20 px-2.5 py-0.5 text-xs font-medium text-violet-300 font-mono">
-              {library.length} {library.length === 1 ? 'track' : 'tracks'}
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white/95">
+              Local Library
+            </h1>
+            <span className="rounded-full bg-white/[0.08] px-2.5 py-0.5 text-xs font-mono text-white/60">
+              {library.length} {library.length === 1 ? 'song' : 'songs'}
             </span>
           </div>
           <p className="mt-1 text-xs text-white/45">
-            Local music collection • {formatTime(totalDuration)} total duration
+            {availableCount} available • {formatTime(totalDuration)} total playtime
           </p>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-3">
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2.5">
           <AddMusicButton />
         </div>
       </div>
 
-      {/* Control Bar: Filter Tabs + Search + Sort */}
-      {library.length > 0 ? (
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-          {/* Filter Tabs */}
-          <div className="flex items-center gap-1 rounded-xl bg-white/[0.03] p-1 border border-white/[0.06]">
+      {/* Controls Bar: Search & Filter Tabs & Sort */}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        {/* Filter Tabs */}
+        <div className="flex items-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-1 text-xs backdrop-blur-md">
+          <button
+            type="button"
+            onClick={() => setActiveFilter('all')}
+            className={`rounded-lg px-3 py-1.5 font-medium transition-all ${
+              activeFilter === 'all'
+                ? 'bg-violet-400/20 text-violet-200 shadow-sm'
+                : 'text-white/50 hover:text-white/80'
+            }`}
+          >
+            All ({library.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter('liked')}
+            className={`rounded-lg px-3 py-1.5 font-medium transition-all ${
+              activeFilter === 'liked'
+                ? 'bg-violet-400/20 text-violet-200 shadow-sm'
+                : 'text-white/50 hover:text-white/80'
+            }`}
+          >
+            Liked ({likedCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter('available')}
+            className={`rounded-lg px-3 py-1.5 font-medium transition-all ${
+              activeFilter === 'available'
+                ? 'bg-violet-400/20 text-violet-200 shadow-sm'
+                : 'text-white/50 hover:text-white/80'
+            }`}
+          >
+            Available ({availableCount})
+          </button>
+          {missingCount > 0 ? (
             <button
               type="button"
-              onClick={() => setActiveFilter('all')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeFilter === 'all'
-                  ? 'bg-violet-400/20 text-white shadow-sm'
-                  : 'text-white/50 hover:text-white'
+              onClick={() => setActiveFilter('missing')}
+              className={`rounded-lg px-3 py-1.5 font-medium transition-all ${
+                activeFilter === 'missing'
+                  ? 'bg-amber-500/20 text-amber-200 shadow-sm'
+                  : 'text-amber-400/60 hover:text-amber-300'
               }`}
             >
-              All ({library.length})
+              Missing ({missingCount})
             </button>
+          ) : null}
+        </div>
 
-            <button
-              type="button"
-              onClick={() => setActiveFilter('liked')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeFilter === 'liked'
-                  ? 'bg-violet-400/20 text-white shadow-sm'
-                  : 'text-white/50 hover:text-white'
-              }`}
-            >
-              Liked ({likedCount})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveFilter('available')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                activeFilter === 'available'
-                  ? 'bg-violet-400/20 text-white shadow-sm'
-                  : 'text-white/50 hover:text-white'
-              }`}
-            >
-              Available ({availableCount})
-            </button>
-
-            {missingCount > 0 ? (
+        {/* Inline Search and Sort */}
+        <div className="flex items-center gap-3">
+          {/* Quick Search */}
+          <div className="relative flex items-center">
+            <Search className="absolute left-3 size-3.5 text-white/40" />
+            <input
+              type="text"
+              placeholder="Search library..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-8.5 w-44 sm:w-56 rounded-xl border border-white/[0.08] bg-white/[0.03] pl-8.5 pr-3 text-xs text-white placeholder-white/30 outline-none transition-all focus:border-violet-400/40 focus:bg-white/[0.06] focus:w-64"
+            />
+            {searchQuery ? (
               <button
                 type="button"
-                onClick={() => setActiveFilter('missing')}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activeFilter === 'missing'
-                    ? 'bg-amber-500/20 text-amber-200 shadow-sm'
-                    : 'text-amber-400/60 hover:text-amber-300'
-                }`}
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 text-xs text-white/40 hover:text-white"
               >
-                Missing ({missingCount})
+                ×
               </button>
             ) : null}
           </div>
 
-          {/* Right: Search Input + Sort Dropdown */}
-          <div className="flex items-center gap-2.5">
-            <div className="relative flex items-center">
-              <Search className="absolute left-3 size-3.5 text-white/40" strokeWidth={1.8} />
-              <input
-                type="text"
-                placeholder="Filter library..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8.5 w-40 sm:w-52 rounded-xl border border-white/10 bg-white/[0.04] pl-8.5 pr-3 text-xs text-white placeholder-white/35 backdrop-blur-md transition-colors focus:border-violet-400/50 focus:bg-white/[0.07] focus:outline-none"
-              />
-            </div>
-
-            {/* Sort Selector */}
-            <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-1 text-xs text-white/70">
-              <ArrowUpDown className="size-3 text-white/40" />
-              <select
-                value={sortKey}
-                onChange={(e) => setSortKey(e.target.value as SortKey)}
-                className="bg-transparent text-xs text-white/80 focus:outline-none cursor-pointer pr-1"
-              >
-                <option value="dateAdded" className="bg-[#121324] text-white">
-                  Recently Added
-                </option>
-                <option value="title" className="bg-[#121324] text-white">
-                  Title
-                </option>
-                <option value="artist" className="bg-[#121324] text-white">
-                  Artist
-                </option>
-                <option value="album" className="bg-[#121324] text-white">
-                  Album
-                </option>
-                <option value="duration" className="bg-[#121324] text-white">
-                  Duration
-                </option>
-              </select>
-
-              <button
-                type="button"
-                aria-label="Toggle sort order"
-                onClick={() => setSortAsc(!sortAsc)}
-                className="ml-1 text-[10px] text-violet-300 font-mono hover:text-white"
-              >
-                {sortAsc ? '▲' : '▼'}
-              </button>
-            </div>
+          {/* Sort Selector Dropdown/Button */}
+          <div className="flex items-center gap-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => handleSortClick('dateAdded')}
+              className={`rounded-lg px-2.5 py-1.5 font-medium transition-colors ${
+                sortKey === 'dateAdded' ? 'bg-white/[0.08] text-white' : 'text-white/45 hover:text-white'
+              }`}
+            >
+              Recent
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSortClick('title')}
+              className={`rounded-lg px-2.5 py-1.5 font-medium transition-colors ${
+                sortKey === 'title' ? 'bg-white/[0.08] text-white' : 'text-white/45 hover:text-white'
+              }`}
+            >
+              Title
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSortClick('artist')}
+              className={`rounded-lg px-2.5 py-1.5 font-medium transition-colors ${
+                sortKey === 'artist' ? 'bg-white/[0.08] text-white' : 'text-white/45 hover:text-white'
+              }`}
+            >
+              Artist
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSortClick('duration')}
+              className={`rounded-lg px-2.5 py-1.5 font-medium transition-colors ${
+                sortKey === 'duration' ? 'bg-white/[0.08] text-white' : 'text-white/45 hover:text-white'
+              }`}
+            >
+              Time
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortAsc(!sortAsc)}
+              title={sortAsc ? 'Ascending' : 'Descending'}
+              className="grid size-7 place-items-center rounded-lg text-white/45 hover:bg-white/[0.06] hover:text-white"
+            >
+              <ArrowUpDown className={`size-3.5 ${sortAsc ? 'text-violet-300' : ''}`} />
+            </button>
           </div>
+        </div>
+      </div>
+
+      {/* Missing Files Notice Banner (if any) */}
+      {missingCount > 0 && activeFilter !== 'missing' ? (
+        <div className="mt-3 flex items-center justify-between rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-2.5 text-xs text-amber-200/90 backdrop-blur-md">
+          <span>
+            ⚠️ {missingCount} {missingCount === 1 ? 'track is' : 'tracks are'} currently missing from
+            their stored disk path.
+          </span>
+          <button
+            type="button"
+            onClick={() => setActiveFilter('missing')}
+            className="font-medium underline hover:text-amber-100 ml-3"
+          >
+            View missing
+          </button>
         </div>
       ) : null}
 
       {/* Library Content List */}
-      <div className="mt-5 flex-1 overflow-y-auto pr-1">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="mt-5 flex-1 overflow-y-auto pr-1"
+      >
         {library.length === 0 ? (
           /* Empty Library State */
           <div className="flex min-h-[380px] flex-col items-center justify-center rounded-2xl border border-white/[0.06] bg-[#0c0e18]/40 p-8 text-center backdrop-blur-xl">
@@ -286,7 +349,7 @@ export function LibraryView() {
         ) : (
           /* Track List Table */
           <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0c0e18]/60 backdrop-blur-xl shadow-lg">
-            <div className="grid grid-cols-12 gap-3 border-b border-white/[0.06] px-4 py-3 text-[11px] font-medium uppercase tracking-[0.14em] text-white/40">
+            <div className="grid grid-cols-12 gap-3 border-b border-white/[0.06] px-4 py-3 text-[11px] font-medium uppercase tracking-[0.14em] text-white/40 font-mono">
               <span className="col-span-1 text-center">#</span>
               <span className="col-span-6 sm:col-span-5">Title</span>
               <span className="hidden sm:block sm:col-span-4 truncate">Album</span>
@@ -308,6 +371,9 @@ export function LibraryView() {
           </div>
         )}
       </div>
+
+      {/* Floating Scroll to Top button */}
+      <ScrollToTopButton visible={showScrollTop} onClick={scrollToTop} />
     </motion.div>
   )
 }

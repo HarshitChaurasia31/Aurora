@@ -25,6 +25,7 @@ const navigationItems: NavigationItem[] = [
   { label: 'Home', icon: Home },
   { label: 'Search', icon: Search },
   { label: 'Library', icon: Library },
+  { label: 'Playlists', icon: ListMusic },
   { label: 'Liked Songs', icon: Heart },
   { label: 'Artists', icon: UserRound },
   { label: 'Albums', icon: Album },

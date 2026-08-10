@@ -1,4 +1,4 @@
-use crate::db::{DatabaseManager, DbTrack, DbTrackInput};
+use crate::db::{DatabaseManager, DbPlaylist, DbPlaylistDetail, DbTrack, DbTrackInput};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -200,6 +200,62 @@ pub fn delete_track(app: AppHandle, id: String) -> Result<(), String> {
     let app_data = get_app_data_dir(&app)?;
     let db = DatabaseManager::new(&app_data)?;
     db.delete_track(&id)
+}
+
+#[tauri::command]
+pub fn create_playlist(app: AppHandle, name: String) -> Result<DbPlaylist, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.create_playlist(&name)
+}
+
+#[tauri::command]
+pub fn get_all_playlists(app: AppHandle) -> Result<Vec<DbPlaylist>, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.get_all_playlists()
+}
+
+#[tauri::command]
+pub fn get_playlist_detail(app: AppHandle, id: String) -> Result<Option<DbPlaylistDetail>, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.get_playlist_detail(&id)
+}
+
+#[tauri::command]
+pub fn rename_playlist(app: AppHandle, id: String, name: String) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.rename_playlist(&id, &name)
+}
+
+#[tauri::command]
+pub fn delete_playlist(app: AppHandle, id: String) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.delete_playlist(&id)
+}
+
+#[tauri::command]
+pub fn add_track_to_playlist(app: AppHandle, playlist_id: String, track_id: String) -> Result<bool, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.add_track_to_playlist(&playlist_id, &track_id)
+}
+
+#[tauri::command]
+pub fn remove_track_from_playlist(app: AppHandle, playlist_id: String, track_id: String) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.remove_track_from_playlist(&playlist_id, &track_id)
+}
+
+#[tauri::command]
+pub fn reorder_playlist_tracks(app: AppHandle, playlist_id: String, track_ids: Vec<String>) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.reorder_playlist_tracks(&playlist_id, track_ids)
 }
 
 fn simple_base64_encode(data: &[u8]) -> String {

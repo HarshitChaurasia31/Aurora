@@ -1,7 +1,8 @@
 import { Play, UserRound } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { usePlayerStore } from '../../stores/playerStore'
+import { ScrollToTopButton } from '../common/ScrollToTopButton'
 import { ArtistDetailView } from './ArtistDetailView'
 import type { Track } from '../../types/player'
 
@@ -21,6 +22,8 @@ export function ArtistsView({ initialArtist, onClearInitialArtist, onSelectAlbum
   const library = usePlayerStore((state) => state.library)
   const playArtist = usePlayerStore((state) => state.playArtist)
   const [selectedArtist, setSelectedArtist] = useState<string | null>(initialArtist || null)
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // Derive normalized artist groups
   const artists = useMemo(() => {
@@ -77,7 +80,7 @@ export function ArtistsView({ initialArtist, onClearInitialArtist, onSelectAlbum
       className="relative z-10 flex size-full max-w-5xl flex-col px-6 py-8 select-none"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-white/[0.08] pb-6">
+      <div className="flex items-center justify-between border-b border-white/[0.08] pb-6 shrink-0">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-medium tracking-tight text-white/90">Artists</h1>
@@ -90,7 +93,11 @@ export function ArtistsView({ initialArtist, onClearInitialArtist, onSelectAlbum
       </div>
 
       {/* Grid Content */}
-      <div className="mt-6 flex-1 overflow-y-auto pr-1">
+      <div
+        ref={scrollRef}
+        onScroll={(e) => setShowScrollTop(e.currentTarget.scrollTop > 220)}
+        className="mt-6 flex-1 overflow-y-auto pr-1"
+      >
         {artists.length === 0 ? (
           <div className="flex min-h-[340px] flex-col items-center justify-center rounded-2xl border border-white/[0.05] bg-[#0c0e18]/30 p-8 text-center backdrop-blur-xl">
             <div className="grid size-14 place-items-center rounded-2xl border border-white/10 bg-violet-400/[0.08] text-violet-300">
@@ -124,7 +131,7 @@ export function ArtistsView({ initialArtist, onClearInitialArtist, onSelectAlbum
                           e.stopPropagation()
                           playArtist(artist.name, artist.tracks)
                         }}
-                        className="absolute inset-0 grid place-items-center rounded-full bg-violet-400/90 text-[#090b14] shadow-xl opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 transition-all hover:scale-105 active:scale-95"
+                        className="absolute inset-0 grid place-items-center rounded-full bg-violet-400/90 text-[#090b14] shadow-xl opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 transition-all hover:scale-105 active:scale-95 cursor-pointer"
                       >
                         <Play className="size-5 fill-current translate-x-0.5" />
                       </button>
@@ -147,6 +154,12 @@ export function ArtistsView({ initialArtist, onClearInitialArtist, onSelectAlbum
           </div>
         )}
       </div>
+
+      {/* Floating Scroll to Top button */}
+      <ScrollToTopButton
+        visible={showScrollTop}
+        onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+      />
     </motion.div>
   )
 }
