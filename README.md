@@ -57,6 +57,23 @@ Create personal playlists without duplicating your music files. Playlist data re
 
 ---
 
+## 🏷️ Fixing Metadata with Mp3tag
+
+Aurora reads album artwork, titles, artists, and album info directly from your audio files' embedded metadata (tags). If your library shows missing artwork, wrong titles, or blank artist/album fields, the fix usually isn't in Aurora — it's in the files themselves.
+
+[**Mp3tag**](https://www.mp3tag.de/en/) is a free, widely-used tag editor that works well for this:
+
+1. Download and install Mp3tag from the [official site](https://www.mp3tag.de/en/).
+2. Open Mp3tag and point it at your music folder (drag and drop works too).
+3. Select the tracks you want to fix.
+4. Edit tags directly (title, artist, album, year, genre, track number) or use **Tag Sources → Online Sources** to auto-fill metadata from providers like MusicBrainz or Discogs.
+5. To add album art, drag an image onto the cover panel or use **Tag Sources** to fetch it automatically.
+6. Save changes, then re-scan the folder in Aurora so it picks up the updated tags.
+
+> Mp3tag supports MP3, FLAC, M4A/AAC, OGG, WAV, WMA, and more — so it covers most formats Aurora's local library will contain.
+
+---
+
 ## 🛡️ Safety & Verification
 
 Aurora v1.0.0 is distributed through this GitHub repository.
