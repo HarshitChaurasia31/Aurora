@@ -38,7 +38,10 @@ pub fn run() {
             get_storage_stats,
             pick_music_folder,
             get_playback_state,
-            save_playback_state
+            save_playback_state,
+            toggle_fullscreen,
+            set_fullscreen,
+            is_fullscreen
         ])
         .run(tauri::generate_context!())
         .expect("error while running Aurora");

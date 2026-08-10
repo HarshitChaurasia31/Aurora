@@ -602,4 +602,55 @@ export const persistenceService = {
       return false
     }
   },
+
+  // ==========================================
+  // NATIVE IMMERSIVE FULLSCREEN
+  // ==========================================
+
+  toggleFullscreen: async (): Promise<boolean> => {
+    if (!isTauri()) {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen?.().catch(() => {})
+        return true
+      } else {
+        await document.exitFullscreen?.().catch(() => {})
+        return false
+      }
+    }
+    try {
+      return await invoke<boolean>('toggle_fullscreen')
+    } catch (err) {
+      console.error('[PersistenceService] Failed to toggle fullscreen:', err)
+      return false
+    }
+  },
+
+  setFullscreen: async (fullscreen: boolean): Promise<boolean> => {
+    if (!isTauri()) {
+      if (fullscreen && !document.fullscreenElement) {
+        await document.documentElement.requestFullscreen?.().catch(() => {})
+      } else if (!fullscreen && document.fullscreenElement) {
+        await document.exitFullscreen?.().catch(() => {})
+      }
+      return Boolean(document.fullscreenElement)
+    }
+    try {
+      return await invoke<boolean>('set_fullscreen', { fullscreen })
+    } catch (err) {
+      console.error('[PersistenceService] Failed to set fullscreen:', err)
+      return false
+    }
+  },
+
+  isFullscreen: async (): Promise<boolean> => {
+    if (!isTauri()) {
+      return Boolean(document.fullscreenElement)
+    }
+    try {
+      return await invoke<boolean>('is_fullscreen')
+    } catch (err) {
+      console.error('[PersistenceService] Failed to query is_fullscreen:', err)
+      return false
+    }
+  },
 }

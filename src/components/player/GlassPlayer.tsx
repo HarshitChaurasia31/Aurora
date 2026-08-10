@@ -1,6 +1,7 @@
-import { Disc3 } from 'lucide-react'
+import { Disc3, Maximize2, Minimize2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useState } from 'react'
+import { useFullscreenStore } from '../../stores/fullscreenStore'
 import { usePlayerStore } from '../../stores/playerStore'
 import { PlaybackControls } from './PlaybackControls'
 import { ProgressBar } from './ProgressBar'
@@ -9,6 +10,8 @@ import { VolumeControl } from './VolumeControl'
 export function GlassPlayer() {
   const currentTrack = usePlayerStore((state) => state.currentTrack)
   const isPlaying = usePlayerStore((state) => state.isPlaying)
+  const isFullscreen = useFullscreenStore((state) => state.isFullscreen)
+  const toggleFullscreen = useFullscreenStore((state) => state.toggleFullscreen)
   const [failedUrls, setFailedUrls] = useState<Set<string>>(new Set())
 
   const title = currentTrack?.title || 'No Track Selected'
@@ -31,7 +34,7 @@ export function GlassPlayer() {
         className="pointer-events-none absolute inset-x-0 top-0 h-1/2 rounded-t-[30px] bg-gradient-to-b from-white/[0.07] via-violet-300/[0.015] to-transparent opacity-80"
       />
 
-      {/* Top Section: Track Info + Playback Controls + Volume */}
+      {/* Top Section: Track Info + Playback Controls + Volume & Fullscreen */}
       <div className="relative z-10 flex items-center justify-between gap-3 sm:gap-6">
         {/* Left: Mini Track Identity Preview */}
         <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-3.5">
@@ -72,9 +75,22 @@ export function GlassPlayer() {
           <PlaybackControls />
         </div>
 
-        {/* Right: Volume Slider */}
-        <div className="hidden sm:flex flex-1 justify-end">
+        {/* Right: Volume Slider & Fullscreen Toggle */}
+        <div className="hidden sm:flex flex-1 items-center justify-end gap-2.5">
           <VolumeControl />
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            title={isFullscreen ? 'Exit fullscreen (Esc / F11)' : 'Enter fullscreen (F11)'}
+            className="grid size-8 place-items-center rounded-xl text-white/50 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-violet-300"
+          >
+            {isFullscreen ? (
+              <Minimize2 className="size-4" strokeWidth={1.8} />
+            ) : (
+              <Maximize2 className="size-4" strokeWidth={1.8} />
+            )}
+          </button>
         </div>
       </div>
 
@@ -84,7 +100,20 @@ export function GlassPlayer() {
       </div>
 
       {/* Mobile Volume row for narrow viewport widths */}
-      <div className="relative z-10 mt-2.5 flex sm:hidden justify-end">
+      <div className="relative z-10 mt-2.5 flex sm:hidden items-center justify-between">
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          title={isFullscreen ? 'Exit fullscreen (Esc / F11)' : 'Enter fullscreen (F11)'}
+          className="grid size-8 place-items-center rounded-xl text-white/50 transition-colors hover:bg-white/[0.08] hover:text-white"
+        >
+          {isFullscreen ? (
+            <Minimize2 className="size-4" strokeWidth={1.8} />
+          ) : (
+            <Maximize2 className="size-4" strokeWidth={1.8} />
+          )}
+        </button>
         <VolumeControl />
       </div>
     </motion.aside>

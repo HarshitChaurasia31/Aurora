@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useFullscreenStore } from '../stores/fullscreenStore'
 import { usePlayerStore } from '../stores/playerStore'
 
 export function useGlobalKeyboardShortcuts() {
@@ -8,8 +9,25 @@ export function useGlobalKeyboardShortcuts() {
   const skipForward = usePlayerStore((state) => state.skipForward)
   const skipBackward = usePlayerStore((state) => state.skipBackward)
 
+  const isFullscreen = useFullscreenStore((state) => state.isFullscreen)
+  const toggleFullscreen = useFullscreenStore((state) => state.toggleFullscreen)
+  const setFullscreen = useFullscreenStore((state) => state.setFullscreen)
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Fullscreen shortcuts (F11 and Escape when fullscreen)
+      if (e.key === 'F11') {
+        e.preventDefault()
+        toggleFullscreen()
+        return
+      }
+
+      if (e.key === 'Escape' && isFullscreen) {
+        e.preventDefault()
+        setFullscreen(false)
+        return
+      }
+
       // Do not hijack keys if user is typing in an input, textarea, select, or contenteditable
       const target = e.target as HTMLElement | null
       if (target) {
@@ -80,5 +98,5 @@ export function useGlobalKeyboardShortcuts() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [togglePlay, next, previous, skipForward, skipBackward])
+  }, [togglePlay, next, previous, skipForward, skipBackward, isFullscreen, toggleFullscreen, setFullscreen])
 }

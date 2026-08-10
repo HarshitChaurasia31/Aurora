@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
-import { Home, PanelLeftOpen } from 'lucide-react'
+import { Home, Maximize2, Minimize2, PanelLeftOpen } from 'lucide-react'
 import { Sidebar } from '../components/sidebar/Sidebar'
 import { AmbientBackground } from '../components/ambient/AmbientBackground'
 import { AmbientDevSwitcher } from '../components/ambient/AmbientDevSwitcher'
@@ -26,6 +26,7 @@ import { NowPlayingToast } from '../components/player/NowPlayingToast'
 import { QueueDrawer } from '../components/queue/QueueDrawer'
 import { useNavigationStore } from '../stores/navigationStore'
 import { usePlayerStore } from '../stores/playerStore'
+import { useFullscreenStore } from '../stores/fullscreenStore'
 import { useGlobalKeyboardShortcuts } from '../hooks/useGlobalKeyboardShortcuts'
 
 export function AppShell() {
@@ -38,9 +39,14 @@ export function AppShell() {
   const setActiveTab = useNavigationStore((state) => state.setActiveTab)
   const initializeLibrary = usePlayerStore((state) => state.initializeLibrary)
 
+  const isFullscreen = useFullscreenStore((state) => state.isFullscreen)
+  const toggleFullscreen = useFullscreenStore((state) => state.toggleFullscreen)
+  const checkFullscreen = useFullscreenStore((state) => state.checkFullscreen)
+
   useEffect(() => {
     initializeLibrary()
-  }, [initializeLibrary])
+    checkFullscreen()
+  }, [initializeLibrary, checkFullscreen])
 
   const handleSelectAlbum = (albumName: string) => {
     setSelectedAlbumFromSearch(albumName)
@@ -54,9 +60,11 @@ export function AppShell() {
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-[#090b14] text-white select-none">
-      {/* Collapsible Left Sidebar */}
+      {/* Collapsible Left Sidebar (hidden in true fullscreen) */}
       <AnimatePresence initial={false}>
-        {isSidebarOpen ? <Sidebar key="sidebar" onCollapse={() => setIsSidebarOpen(false)} /> : null}
+        {isSidebarOpen && !isFullscreen ? (
+          <Sidebar key="sidebar" onCollapse={() => setIsSidebarOpen(false)} />
+        ) : null}
       </AnimatePresence>
 
       {/* Main Content Area */}
@@ -70,7 +78,7 @@ export function AppShell() {
 
         {/* Collapsed Sidebar Floating Navigation: [ Home ] [ Sidebar Expand ] */}
         <AnimatePresence>
-          {!isSidebarOpen ? (
+          {!isSidebarOpen && !isFullscreen ? (
             <motion.div
               key="collapsed-nav-cluster"
               className="absolute left-6 top-6 z-30 flex items-center gap-2"
@@ -108,21 +116,36 @@ export function AppShell() {
           ) : null}
         </AnimatePresence>
 
-        {/* View Switcher Container with Collapsed Sidebar Clearance */}
-        <div
-          className={`relative z-10 flex size-full flex-1 flex-col items-center overflow-hidden transition-all duration-250 ${
-            !isSidebarOpen && activeTab !== 'Home' ? 'pl-32 sm:pl-36' : ''
+        {/* Top-Right Dedicated Fullscreen Button */}
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? 'Exit fullscreen (F11)' : 'Fullscreen (F11)'}
+          title={isFullscreen ? 'Exit fullscreen (F11)' : 'Fullscreen (F11)'}
+          className={`absolute top-6 right-6 z-30 grid size-11 place-items-center rounded-xl border border-white/10 bg-[#15111f]/80 shadow-lg backdrop-blur-md transition-colors hover:border-violet-300/30 hover:bg-violet-400/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300 cursor-pointer ${
+            isFullscreen
+              ? 'text-violet-300 border-violet-400/30 bg-violet-400/10'
+              : 'text-white/70'
           }`}
         >
+          {isFullscreen ? (
+            <Minimize2 className="size-5" strokeWidth={1.7} />
+          ) : (
+            <Maximize2 className="size-5" strokeWidth={1.7} />
+          )}
+        </button>
+
+        {/* Primary View Routing */}
+        <div className="relative z-10 flex size-full flex-col overflow-hidden">
           {activeTab === 'Library' ? (
             <LibraryView />
-          ) : activeTab === 'Playlists' ? (
-            <PlaylistsView />
           ) : activeTab === 'Search' ? (
             <SearchView
               onSelectAlbum={handleSelectAlbum}
               onSelectArtist={handleSelectArtist}
             />
+          ) : activeTab === 'Playlists' ? (
+            <PlaylistsView />
           ) : activeTab === 'Albums' ? (
             <AlbumsView
               initialAlbum={selectedAlbumFromSearch}
@@ -155,8 +178,8 @@ export function AppShell() {
         {/* Playback Queue Drawer Overlay */}
         <QueueDrawer />
 
-        {/* Ambient Mood Switcher (import.meta.env.DEV only) */}
-        <AmbientDevSwitcher />
+        {/* Ambient Mood Switcher (import.meta.env.DEV only, hidden in fullscreen) */}
+        {!isFullscreen ? <AmbientDevSwitcher /> : null}
 
         {/* Playlist Modals */}
         <CreatePlaylistModal />

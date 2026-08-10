@@ -359,6 +359,25 @@ pub fn save_playback_state(app: AppHandle, state: DbPlaybackState) -> Result<(),
     db.save_playback_state(state)
 }
 
+#[tauri::command]
+pub fn toggle_fullscreen(window: tauri::Window) -> Result<bool, String> {
+    let is_fs = window.is_fullscreen().map_err(|e| e.to_string())?;
+    let target = !is_fs;
+    window.set_fullscreen(target).map_err(|e| e.to_string())?;
+    Ok(target)
+}
+
+#[tauri::command]
+pub fn set_fullscreen(window: tauri::Window, fullscreen: bool) -> Result<bool, String> {
+    window.set_fullscreen(fullscreen).map_err(|e| e.to_string())?;
+    Ok(fullscreen)
+}
+
+#[tauri::command]
+pub fn is_fullscreen(window: tauri::Window) -> Result<bool, String> {
+    window.is_fullscreen().map_err(|e| e.to_string())
+}
+
 fn simple_base64_encode(data: &[u8]) -> String {
     const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
