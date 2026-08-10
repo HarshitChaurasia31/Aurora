@@ -1,4 +1,5 @@
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core'
+import type { CustomMood } from '../types/ambient'
 import type { Track } from '../types/player'
 import type { Playlist, PlaylistDetail } from '../types/playlist'
 
@@ -432,6 +433,73 @@ export const persistenceService = {
       return true
     } catch (err) {
       console.error('[PersistenceService] Failed to reorder playlist tracks:', err)
+      return false
+    }
+  },
+
+  // ==========================================
+  // PHASE 8B: CUSTOM AMBIENT MOODS
+  // ==========================================
+
+  pickAmbientVideo: async (): Promise<string | null> => {
+    if (!isTauri()) return null
+    try {
+      return await invoke<string | null>('pick_ambient_video')
+    } catch (err) {
+      console.error('[PersistenceService] Failed to pick ambient video:', err)
+      return null
+    }
+  },
+
+  getAllCustomMoods: async (): Promise<CustomMood[]> => {
+    if (!isTauri()) return []
+    try {
+      return await invoke<CustomMood[]>('get_all_custom_moods')
+    } catch (err) {
+      console.error('[PersistenceService] Failed to get custom moods:', err)
+      return []
+    }
+  },
+
+  createCustomMood: async (name: string, videoPath: string): Promise<CustomMood | null> => {
+    if (!isTauri()) return null
+    try {
+      return await invoke<CustomMood>('create_custom_mood', { name, videoPath })
+    } catch (err) {
+      console.error('[PersistenceService] Failed to create custom mood:', err)
+      throw err
+    }
+  },
+
+  renameCustomMood: async (id: string, name: string): Promise<boolean> => {
+    if (!isTauri()) return false
+    try {
+      await invoke('rename_custom_mood', { id, name })
+      return true
+    } catch (err) {
+      console.error('[PersistenceService] Failed to rename custom mood:', err)
+      throw err
+    }
+  },
+
+  updateCustomMoodVideo: async (id: string, videoPath: string): Promise<boolean> => {
+    if (!isTauri()) return false
+    try {
+      await invoke('update_custom_mood_video', { id, videoPath })
+      return true
+    } catch (err) {
+      console.error('[PersistenceService] Failed to update custom mood video path:', err)
+      throw err
+    }
+  },
+
+  deleteCustomMood: async (id: string): Promise<boolean> => {
+    if (!isTauri()) return false
+    try {
+      await invoke('delete_custom_mood', { id })
+      return true
+    } catch (err) {
+      console.error('[PersistenceService] Failed to delete custom mood:', err)
       return false
     }
   },

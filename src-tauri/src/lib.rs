@@ -25,7 +25,13 @@ pub fn run() {
             delete_playlist,
             add_track_to_playlist,
             remove_track_from_playlist,
-            reorder_playlist_tracks
+            reorder_playlist_tracks,
+            pick_ambient_video,
+            create_custom_mood,
+            get_all_custom_moods,
+            rename_custom_mood,
+            update_custom_mood_video,
+            delete_custom_mood
         ])
         .run(tauri::generate_context!())
         .expect("error while running Aurora");

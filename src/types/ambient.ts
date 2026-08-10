@@ -1,4 +1,4 @@
-export type AmbientMood =
+export type BuiltInMood =
   | 'none'
   | 'rain'
   | 'mountain'
@@ -9,8 +9,10 @@ export type AmbientMood =
   | 'fireplace'
   | 'snow'
 
+export type AmbientMood = BuiltInMood | (string & {})
+
 export interface AmbientMoodOption {
-  readonly id: AmbientMood
+  readonly id: BuiltInMood
   readonly label: string
 }
 
@@ -25,3 +27,12 @@ export const AMBIENT_MOOD_OPTIONS: readonly AmbientMoodOption[] = [
   { id: 'fireplace', label: 'Fireplace' },
   { id: 'none', label: 'None' },
 ] as const
+
+export interface CustomMood {
+  id: string
+  name: string
+  videoPath: string
+  isMissing: boolean
+  createdAt: number
+  updatedAt: number
+}

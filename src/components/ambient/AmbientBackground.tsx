@@ -2,10 +2,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { memo, useEffect, useRef, useState } from 'react'
 import { getAmbientVideoAsset } from '../../features/ambient/ambientAssets'
 import { useAmbientStore } from '../../stores/ambientStore'
-import type { AmbientMood } from '../../types/ambient'
 
 interface AmbientVideoLayerProps {
-  mood: Exclude<AmbientMood, 'none'>
+  mood: string
   src: string
 }
 
@@ -73,7 +72,14 @@ const AmbientVideoLayer = memo(function AmbientVideoLayer({ mood, src }: Ambient
 
 export function AmbientBackground() {
   const currentMood = useAmbientStore((state) => state.currentMood)
-  const activeVideoSrc = getAmbientVideoAsset(currentMood)
+  const customMoods = useAmbientStore((state) => state.customMoods)
+  const loadCustomMoods = useAmbientStore((state) => state.loadCustomMoods)
+
+  useEffect(() => {
+    loadCustomMoods()
+  }, [loadCustomMoods])
+
+  const activeVideoSrc = getAmbientVideoAsset(currentMood, customMoods)
 
   return (
     <div

@@ -13,6 +13,10 @@ import { CreatePlaylistModal } from '../components/playlists/CreatePlaylistModal
 import { RenamePlaylistModal } from '../components/playlists/RenamePlaylistModal'
 import { DeletePlaylistModal } from '../components/playlists/DeletePlaylistModal'
 import { AddToPlaylistModal } from '../components/playlists/AddToPlaylistModal'
+import { CreateCustomMoodModal } from '../components/ambient/CreateCustomMoodModal'
+import { RenameCustomMoodModal } from '../components/ambient/RenameCustomMoodModal'
+import { RelinkCustomMoodModal } from '../components/ambient/RelinkCustomMoodModal'
+import { DeleteCustomMoodModal } from '../components/ambient/DeleteCustomMoodModal'
 import { AlbumsView } from '../components/albums/AlbumsView'
 import { ArtistsView } from '../components/artists/ArtistsView'
 import { LikedSongsView } from '../components/liked/LikedSongsView'
@@ -160,6 +164,12 @@ export function AppShell() {
         <RenamePlaylistModal />
         <DeletePlaylistModal />
         <AddToPlaylistModal />
+
+        {/* Custom Mood Modals */}
+        <CreateCustomMoodModal />
+        <RenameCustomMoodModal />
+        <RelinkCustomMoodModal />
+        <DeleteCustomMoodModal />
       </section>
     </main>
   )

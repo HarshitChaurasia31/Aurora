@@ -1,4 +1,4 @@
-use crate::db::{DatabaseManager, DbPlaylist, DbPlaylistDetail, DbTrack, DbTrackInput};
+use crate::db::{DatabaseManager, DbCustomMood, DbPlaylist, DbPlaylistDetail, DbTrack, DbTrackInput};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -256,6 +256,53 @@ pub fn reorder_playlist_tracks(app: AppHandle, playlist_id: String, track_ids: V
     let app_data = get_app_data_dir(&app)?;
     let db = DatabaseManager::new(&app_data)?;
     db.reorder_playlist_tracks(&playlist_id, track_ids)
+}
+
+#[tauri::command]
+pub fn pick_ambient_video() -> Result<Option<String>, String> {
+    let file = rfd::FileDialog::new()
+        .add_filter("Video Files", &["mp4", "webm", "mov"])
+        .pick_file();
+
+    match file {
+        Some(path_buf) => Ok(Some(path_buf.to_string_lossy().to_string())),
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub fn create_custom_mood(app: AppHandle, name: String, video_path: String) -> Result<DbCustomMood, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.create_custom_mood(&name, &video_path)
+}
+
+#[tauri::command]
+pub fn get_all_custom_moods(app: AppHandle) -> Result<Vec<DbCustomMood>, String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.get_all_custom_moods()
+}
+
+#[tauri::command]
+pub fn rename_custom_mood(app: AppHandle, id: String, name: String) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.rename_custom_mood(&id, &name)
+}
+
+#[tauri::command]
+pub fn update_custom_mood_video(app: AppHandle, id: String, video_path: String) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.update_custom_mood_video(&id, &video_path)
+}
+
+#[tauri::command]
+pub fn delete_custom_mood(app: AppHandle, id: String) -> Result<(), String> {
+    let app_data = get_app_data_dir(&app)?;
+    let db = DatabaseManager::new(&app_data)?;
+    db.delete_custom_mood(&id)
 }
 
 fn simple_base64_encode(data: &[u8]) -> String {

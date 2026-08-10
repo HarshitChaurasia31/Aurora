@@ -1,3 +1,4 @@
+import { convertFileSrc, isTauri } from '@tauri-apps/api/core'
 import rainVideo from '../../assets/ambient/rain.mp4'
 import mountainVideo from '../../assets/ambient/mountain.mp4'
 import nightVideo from '../../assets/ambient/night.mp4'
@@ -6,9 +7,9 @@ import oceanVideo from '../../assets/ambient/ocean.mp4'
 import cityVideo from '../../assets/ambient/city.mp4'
 import fireplaceVideo from '../../assets/ambient/fireplace.mp4'
 import snowVideo from '../../assets/ambient/snow.mp4'
-import type { AmbientMood } from '../../types/ambient'
+import type { BuiltInMood, CustomMood } from '../../types/ambient'
 
-export const AMBIENT_VIDEO_MAP: Record<Exclude<AmbientMood, 'none'>, string> = {
+export const AMBIENT_VIDEO_MAP: Record<Exclude<BuiltInMood, 'none'>, string> = {
   rain: rainVideo,
   mountain: mountainVideo,
   night: nightVideo,
@@ -19,9 +20,19 @@ export const AMBIENT_VIDEO_MAP: Record<Exclude<AmbientMood, 'none'>, string> = {
   fireplace: fireplaceVideo,
 }
 
-export function getAmbientVideoAsset(mood: AmbientMood): string | null {
+export function getAmbientVideoAsset(mood: string, customMoods: CustomMood[] = []): string | null {
   if (mood === 'none') {
     return null
   }
-  return AMBIENT_VIDEO_MAP[mood] ?? null
+  if (mood in AMBIENT_VIDEO_MAP) {
+    return AMBIENT_VIDEO_MAP[mood as Exclude<BuiltInMood, 'none'>] ?? null
+  }
+  const custom = customMoods.find((m) => m.id === mood)
+  if (custom && !custom.isMissing && custom.videoPath) {
+    if (isTauri()) {
+      return convertFileSrc(custom.videoPath)
+    }
+    return custom.videoPath
+  }
+  return null
 }

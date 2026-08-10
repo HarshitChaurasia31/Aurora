@@ -70,6 +70,17 @@ pub struct DbPlaylistDetail {
     pub tracks: Vec<DbTrack>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbCustomMood {
+    pub id: String,
+    pub name: String,
+    pub video_path: String,
+    pub is_missing: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 pub fn compute_file_sha256(path: &Path) -> Option<String> {
     let mut file = fs::File::open(path).ok()?;
     let mut hasher = Sha256::new();
@@ -275,6 +286,41 @@ impl DatabaseManager {
                 [],
             )
             .map_err(|e| format!("Failed to record Migration 3: {}", e))?;
+        }
+
+        // Migration 4: Add Custom Moods Table
+        let migration_4_applied: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM _migrations WHERE version = 4)",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if !migration_4_applied {
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS custom_moods (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    video_path TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );",
+                [],
+            )
+            .map_err(|e| format!("Migration 4 failed to create custom_moods table: {}", e))?;
+
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_custom_moods_name ON custom_moods(name);",
+                [],
+            )
+            .map_err(|e| format!("Migration 4 failed to create custom_moods name index: {}", e))?;
+
+            conn.execute(
+                "INSERT INTO _migrations (version, applied_at) VALUES (4, datetime('now'));",
+                [],
+            )
+            .map_err(|e| format!("Failed to record Migration 4: {}", e))?;
         }
 
         Ok(())
@@ -946,6 +992,156 @@ impl DatabaseManager {
         tx.commit().map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    // ==========================================
+    // PHASE 8B: CUSTOM MOOD CRUD OPERATIONS
+    // ==========================================
+
+    pub fn create_custom_mood(&self, name: &str, video_path: &str) -> Result<DbCustomMood, String> {
+        let conn = self.get_connection()?;
+        let trimmed_name = name.trim();
+        let trimmed_path = video_path.trim();
+
+        if trimmed_name.is_empty() {
+            return Err("Custom mood name cannot be empty".to_string());
+        }
+        if trimmed_path.is_empty() {
+            return Err("Custom mood video path cannot be empty".to_string());
+        }
+
+        // Duplicate name / path protection
+        let duplicate: Option<String> = conn
+            .query_row(
+                "SELECT name FROM custom_moods WHERE LOWER(name) = LOWER(?1)",
+                params![trimmed_name],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Database query error: {}", e))?;
+
+        if duplicate.is_some() {
+            return Err(format!("A custom mood named \"{}\" already exists", trimmed_name));
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let id = format!("custom_mood_{}_{}", now, fastrand_u32());
+        let is_missing = !Path::new(trimmed_path).exists();
+
+        conn.execute(
+            "INSERT INTO custom_moods (id, name, video_path, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, trimmed_name, trimmed_path, now, now],
+        )
+        .map_err(|e| format!("Failed to create custom mood: {}", e))?;
+
+        Ok(DbCustomMood {
+            id,
+            name: trimmed_name.to_string(),
+            video_path: trimmed_path.to_string(),
+            is_missing,
+            created_at: now,
+            updated_at: now,
+        })
+    }
+
+    pub fn get_all_custom_moods(&self) -> Result<Vec<DbCustomMood>, String> {
+        let conn = self.get_connection()?;
+        let mut stmt = conn
+            .prepare("SELECT id, name, video_path, created_at, updated_at FROM custom_moods ORDER BY created_at ASC")
+            .map_err(|e| format!("Failed to prepare get_all_custom_moods query: {}", e))?;
+
+        let iter = stmt
+            .query_map([], |row| {
+                let id: String = row.get(0)?;
+                let name: String = row.get(1)?;
+                let video_path: String = row.get(2)?;
+                let created_at: i64 = row.get(3)?;
+                let updated_at: i64 = row.get(4)?;
+                let is_missing = !Path::new(&video_path).exists();
+
+                Ok(DbCustomMood {
+                    id,
+                    name,
+                    video_path,
+                    is_missing,
+                    created_at,
+                    updated_at,
+                })
+            })
+            .map_err(|e| format!("Query map custom moods error: {}", e))?;
+
+        let mut moods = Vec::new();
+        for res in iter {
+            moods.push(res.map_err(|e| format!("Custom mood row read error: {}", e))?);
+        }
+
+        Ok(moods)
+    }
+
+    pub fn rename_custom_mood(&self, id: &str, new_name: &str) -> Result<(), String> {
+        let conn = self.get_connection()?;
+        let trimmed = new_name.trim();
+        if trimmed.is_empty() {
+            return Err("Custom mood name cannot be empty".to_string());
+        }
+
+        // Duplicate name check for other records
+        let duplicate: Option<String> = conn
+            .query_row(
+                "SELECT name FROM custom_moods WHERE LOWER(name) = LOWER(?1) AND id != ?2",
+                params![trimmed, id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Database query error: {}", e))?;
+
+        if duplicate.is_some() {
+            return Err(format!("A custom mood named \"{}\" already exists", trimmed));
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        conn.execute(
+            "UPDATE custom_moods SET name = ?1, updated_at = ?2 WHERE id = ?3",
+            params![trimmed, now, id],
+        )
+        .map_err(|e| format!("Failed to rename custom mood: {}", e))?;
+
+        Ok(())
+    }
+
+    pub fn update_custom_mood_video(&self, id: &str, new_video_path: &str) -> Result<(), String> {
+        let conn = self.get_connection()?;
+        let trimmed_path = new_video_path.trim();
+        if trimmed_path.is_empty() {
+            return Err("Video path cannot be empty".to_string());
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        conn.execute(
+            "UPDATE custom_moods SET video_path = ?1, updated_at = ?2 WHERE id = ?3",
+            params![trimmed_path, now, id],
+        )
+        .map_err(|e| format!("Failed to update custom mood video path: {}", e))?;
+
+        Ok(())
+    }
+
+    pub fn delete_custom_mood(&self, id: &str) -> Result<(), String> {
+        let conn = self.get_connection()?;
+        conn.execute("DELETE FROM custom_moods WHERE id = ?1", params![id])
+            .map_err(|e| format!("Failed to delete custom mood record: {}", e))?;
+        Ok(())
+    }
 }
 
 fn fastrand_u32() -> u32 {
@@ -1232,6 +1428,62 @@ mod tests {
         assert!(db.get_playlist_detail(&created.id).unwrap().is_none());
         // Tracks 1 and 2 still remain in library!
         assert_eq!(db.get_all_tracks().unwrap().len(), 2);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_custom_moods_lifecycle_crud_missing_detection_and_duplicate_protection() {
+        let temp_dir = env::temp_dir().join(format!("aurora_test_mood_db_{}", fastrand_u32()));
+        let db = DatabaseManager::new(&temp_dir).expect("DatabaseManager init failed");
+
+        // 1. Create a physical temp video file
+        let video_dir = temp_dir.join("videos");
+        fs::create_dir_all(&video_dir).unwrap();
+        let video_file = video_dir.join("midnight-drive.mp4");
+        fs::write(&video_file, b"FAKE_MP4_VIDEO_HEADER_DATA_12345").unwrap();
+        let video_path = video_file.to_string_lossy().to_string();
+
+        // 2. Create custom mood
+        let created = db.create_custom_mood("Midnight Drive", &video_path).unwrap();
+        assert_eq!(created.name, "Midnight Drive");
+        assert_eq!(created.video_path, video_path);
+        assert_eq!(created.is_missing, false);
+
+        // 3. Duplicate name protection
+        let dup_res = db.create_custom_mood("midnight drive", &video_path);
+        assert!(dup_res.is_err());
+
+        // 4. Retrieve all custom moods
+        let all = db.get_all_custom_moods().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].name, "Midnight Drive");
+        assert_eq!(all[0].is_missing, false);
+
+        // 5. Rename custom mood
+        db.rename_custom_mood(&created.id, "Late Night Drive").unwrap();
+        let all_after_rename = db.get_all_custom_moods().unwrap();
+        assert_eq!(all_after_rename[0].name, "Late Night Drive");
+
+        // 6. Test missing file detection: remove the physical file
+        fs::remove_file(&video_file).unwrap();
+        let all_missing = db.get_all_custom_moods().unwrap();
+        assert_eq!(all_missing[0].is_missing, true);
+
+        // 7. Relink / Change video: create a new file and update
+        let new_video_file = video_dir.join("midnight-drive-v2.mp4");
+        fs::write(&new_video_file, b"FAKE_MP4_VIDEO_V2_DATA").unwrap();
+        let new_video_path = new_video_file.to_string_lossy().to_string();
+
+        db.update_custom_mood_video(&created.id, &new_video_path).unwrap();
+        let all_relinked = db.get_all_custom_moods().unwrap();
+        assert_eq!(all_relinked[0].video_path, new_video_path);
+        assert_eq!(all_relinked[0].is_missing, false);
+
+        // 8. Delete custom mood: verify record deleted but new_video_file is preserved!
+        db.delete_custom_mood(&created.id).unwrap();
+        assert_eq!(db.get_all_custom_moods().unwrap().len(), 0);
+        assert!(Path::new(&new_video_path).exists());
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
